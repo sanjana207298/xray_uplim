@@ -16,9 +16,8 @@ import warnings
 import numpy as np
 
 from .config      import Config
-from .coords      import sky_to_evt_pixel
 from .io          import locate_files, load_events, load_expmap
-from ..coords     import parse_coord, sky_to_img_pixel
+from ..coords     import parse_coord, sky_to_evt_pixel, sky_to_img_pixel
 from ..eef        import compute_eef
 from ..exposure   import compute_exposure_stats
 from ..statistics import net_count_rate, kraft_upper_limit, gehrels_upper_limit
