@@ -176,11 +176,19 @@ def write_results_csv(rows, out_dir, obsid):
 
     with open(csv_path, 'w', newline='') as fh:
         writer = csv.DictWriter(fh, fieldnames=fieldnames,
-                                extrasaction='ignore')
+                                extrasaction='ignore',
+                                quoting=csv.QUOTE_NONNUMERIC)
         writer.writeheader()
         writer.writerows(rows)
 
     print(f"\n  Results written to: {csv_path}")
+
+    # Also write Excel-native .xlsx so obsids with leading zeros display correctly
+    from ..output import write_results_xlsx
+    xlsx_path = csv_path.replace('.csv', '.xlsx')
+    if write_results_xlsx(rows, fieldnames, xlsx_path, text_cols=('obsid',)):
+        print(f"  Excel file written: {xlsx_path}")
+
     return csv_path
 
 
