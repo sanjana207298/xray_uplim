@@ -129,8 +129,12 @@ class SwiftConfig:
         default_factory=lambda: [0.9545, 0.9973])
 
     # -- Output ---------------------------------------------------------------
-    use_gui    : bool = False
-    save_plots : bool = True
+    use_gui     : bool = False
+    gui_per_obs : bool = False  # True: independent GUI for each observation
+                                # False (default): GUI for first obs, regions
+                                #   shared with all others.
+                                # Ignored when use_gui=False.
+    save_plots  : bool = True
 
     # =========================================================================
     # Instrument constants — do not edit

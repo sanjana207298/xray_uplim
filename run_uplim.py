@@ -108,7 +108,7 @@ SWIFT = dict(
                         # The pipeline constructs: <data_dir>/<obsid>/xrt/event/
                         # (same convention as NuSTAR base_path / obsid.)
 
-    obsid             = "03000397004",
+    obsid             = ["03000397004","03000397002"],
                         # Single observation:  obsid = "03000397004"
                         # Multiple co-added:   obsid = ["03000397001",
                         #                               "03000397002",
@@ -142,6 +142,11 @@ SWIFT = dict(
     confidence_levels = [0.9545, 0.9973],   # ~2σ and ~3σ
 
     use_gui           = True,   # True: interactive region selector (requires display)
+    gui_per_obs       = True,  # True: independent GUI for EACH observation —
+                                #   use if pointings differ or source falls
+                                #   at the edge / off-chip in some obs.
+                                # False (default): GUI for first obs only,
+                                #   regions shared with all others.
     save_plots        = True,
 )
 

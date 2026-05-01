@@ -12,6 +12,7 @@ run_uplim(**kwargs)          — entry point; builds SwiftConfig and runs
 process_observation(cfg)     — full pipeline for one Swift observation
 """
 
+import copy
 import csv
 import os
 import warnings
@@ -29,11 +30,43 @@ from ..statistics import net_count_rate, kraft_upper_limit, gehrels_upper_limit
 # RESULTS TABLE
 # =============================================================================
 
+def _compute_ul_results(N_src, B_scaled, t_eff, N_bkg_raw, area_ratio,
+                         confidence_levels, eef=None):
+    """
+    Compute upper limits at every confidence level.  No output printed.
+    Returns a list of dicts, one per CL.
+    """
+    CR_net, CR_sigma = net_count_rate(N_src, B_scaled, t_eff,
+                                       N_bkg_raw, area_ratio)
+    results = []
+    for cl in confidence_levels:
+        S_k  = kraft_upper_limit(N_src, B_scaled, cl)
+        S_g  = gehrels_upper_limit(N_src, B_scaled, cl)
+        CR_k_ap = S_k / t_eff
+        CR_g_ap = S_g / t_eff
+        CR_k_tot = S_k / (t_eff * eef) if (eef is not None and eef > 0) else None
+        CR_g_tot = S_g / (t_eff * eef) if (eef is not None and eef > 0) else None
+        results.append({
+            'cl':                  cl,
+            'CR_net':              CR_net,
+            'CR_sigma':            CR_sigma,
+            'S_kraft':             S_k,
+            'CR_kraft_aperture':   CR_k_ap,
+            'CR_kraft_total':      CR_k_tot,
+            'S_gehrels':           S_g,
+            'CR_gehrels_aperture': CR_g_ap,
+            'CR_gehrels_total':    CR_g_tot,
+        })
+    return results
+
+
 def _print_results_table(N_src, B_scaled, t_eff, N_bkg_raw, area_ratio,
                           confidence_levels, eef=None):
     """Compute and print upper limits at every confidence level."""
-    CR_net, CR_sigma = net_count_rate(N_src, B_scaled, t_eff,
-                                       N_bkg_raw, area_ratio)
+    results = _compute_ul_results(N_src, B_scaled, t_eff, N_bkg_raw,
+                                   area_ratio, confidence_levels, eef)
+    CR_net   = results[0]['CR_net']
+    CR_sigma = results[0]['CR_sigma']
 
     print(f"\n  Point estimate  (N_src - B) / t_eff  [NOT an upper limit]")
     print(f"    = ({N_src} - {B_scaled:.1f}) / {t_eff:.1f} s")
@@ -59,39 +92,20 @@ def _print_results_table(N_src, B_scaled, t_eff, N_bkg_raw, area_ratio,
     print(header)
     print(divider)
 
-    results = []
-    for cl in confidence_levels:
-        S_k  = kraft_upper_limit(N_src, B_scaled, cl)
-        S_g  = gehrels_upper_limit(N_src, B_scaled, cl)
-        CR_k_ap = S_k / t_eff
-        CR_g_ap = S_g / t_eff
-
-        CR_k_tot = S_k / (t_eff * eef) if (eef is not None and eef > 0) else None
-        CR_g_tot = S_g / (t_eff * eef) if (eef is not None and eef > 0) else None
-
-        results.append({
-            'cl':                  cl,
-            'CR_net':              CR_net,
-            'CR_sigma':            CR_sigma,
-            'S_kraft':             S_k,
-            'CR_kraft_aperture':   CR_k_ap,
-            'CR_kraft_total':      CR_k_tot,
-            'S_gehrels':           S_g,
-            'CR_gehrels_aperture': CR_g_ap,
-            'CR_gehrels_total':    CR_g_tot,
-        })
-
+    for r in results:
         if eef is not None:
             print(
-                f"  {cl:8.4f}  {CR_net:+13.4e}  "
-                f"{S_k:10.3f}  {CR_k_ap:13.4e}  {CR_k_tot:13.4e}  "
-                f"{S_g:10.3f}  {CR_g_ap:13.4e}  {CR_g_tot:13.4e}"
+                f"  {r['cl']:8.4f}  {CR_net:+13.4e}  "
+                f"{r['S_kraft']:10.3f}  {r['CR_kraft_aperture']:13.4e}  "
+                f"{r['CR_kraft_total']:13.4e}  "
+                f"{r['S_gehrels']:10.3f}  {r['CR_gehrels_aperture']:13.4e}  "
+                f"{r['CR_gehrels_total']:13.4e}"
             )
         else:
             print(
-                f"  {cl:8.4f}  {CR_net:+13.4e}  "
-                f"{S_k:10.3f}  {CR_k_ap:13.4e}  "
-                f"{S_g:10.3f}  {CR_g_ap:13.4e}"
+                f"  {r['cl']:8.4f}  {CR_net:+13.4e}  "
+                f"{r['S_kraft']:10.3f}  {r['CR_kraft_aperture']:13.4e}  "
+                f"{r['S_gehrels']:10.3f}  {r['CR_gehrels_aperture']:13.4e}"
             )
 
     print(divider)
@@ -111,11 +125,17 @@ def _print_results_table(N_src, B_scaled, t_eff, N_bkg_raw, area_ratio,
 # =============================================================================
 
 def _build_csv_rows(mode, e_lo, e_hi, N_src, N_bkg_raw, B_scaled,
-                    area_ratio, t_eff, ul_results, eef_info, obsid):
-    """Build a list of CSV row dicts (one per confidence level)."""
+                    area_ratio, t_eff, ul_results, eef_info, obsid,
+                    result_type='individual'):
+    """
+    Build a list of CSV row dicts (one per confidence level).
+
+    result_type : 'individual' for per-obs rows, 'combined' for the stacked total.
+    """
     rows = []
     for r in ul_results:
         row = {
+            'result_type':         result_type,
             'obsid':               obsid,
             'mode':                mode,
             'energy_lo_kev':       e_lo,
@@ -164,7 +184,7 @@ def write_results_csv(rows, out_dir, obsid):
     csv_path = os.path.join(out_dir, f"swift_uplim_{obsid}.csv")
 
     fieldnames = [
-        'obsid', 'mode', 'energy_lo_kev', 'energy_hi_kev',
+        'result_type', 'obsid', 'mode', 'energy_lo_kev', 'energy_hi_kev',
         'N_src', 'N_bkg_raw', 'B_scaled', 'area_ratio',
         't_eff_s',
         'theta_arcmin', 'eef', 'energy_kev', 'psf_file',
@@ -452,11 +472,17 @@ def process_observation(cfg: SwiftConfig):
     obsids = cfg.obsids
     n_obs  = len(obsids)
 
+    # Save the original aperture/background settings so we can restore them
+    # for each observation in per_obs GUI mode.
+    _orig = {k: getattr(cfg, k) for k in (
+        'src_radius_arcsec', 'bkg_radius_arcsec', 'bkg_inner_factor',
+        'bkg_mode', 'bkg_ra', 'bkg_dec')}
+
     # ------------------------------------------------------------------ #
     # Loop over observations                                               #
     # ------------------------------------------------------------------ #
     per_obs = []
-    bkg_cx_first = bkg_cy_first = None   # pixel coords from GUI (first obs)
+    bkg_cx_first = bkg_cy_first = None   # pixel coords from GUI (first obs, shared mode)
 
     for i, obsid_str in enumerate(obsids):
         obs_root = os.path.join(cfg.data_dir, obsid_str)
@@ -470,44 +496,60 @@ def process_observation(cfg: SwiftConfig):
 
         obs = _load_one_obs(cfg, obs_root, obsid_str)
 
-        # GUI only for the first observation
-        if i == 0:
-            bkg_cx_evt = obs['cx_evt']
-            bkg_cy_evt = obs['cy_evt']
+        # ── GUI logic ────────────────────────────────────────────────── #
+        if cfg.use_gui and cfg.gui_per_obs:
+            # Independent GUI for every observation.
+            # Work on a per-obs copy so we don't pollute the shared cfg.
+            cfg_obs = copy.copy(cfg)
+            for k, v in _orig.items():
+                setattr(cfg_obs, k, v)   # reset to original settings each time
+            bkg_cx_evt, bkg_cy_evt = _run_gui_first_obs(cfg_obs, obs)
 
-            if cfg.use_gui:
-                bkg_cx_evt, bkg_cy_evt = _run_gui_first_obs(cfg, obs)
-
+        elif cfg.use_gui and i == 0:
+            # Shared mode: GUI only for the first observation.
+            # Mutates cfg so that subsequent obs inherit aperture + bkg sky coords.
+            cfg_obs = cfg
+            bkg_cx_evt, bkg_cy_evt = _run_gui_first_obs(cfg_obs, obs)
             bkg_cx_first = bkg_cx_evt
             bkg_cy_first = bkg_cy_evt
 
-            # Print aperture summary (once, after possible GUI)
-            print(f"\n  Src aperture : {cfg.src_radius_arcsec:.1f}\"")
-            if cfg.bkg_mode == 'annulus':
-                r_in = cfg.src_radius_arcsec * cfg.bkg_inner_factor
-                print(f"  Bkg annulus  : {r_in:.1f}\" — {cfg.bkg_radius_arcsec:.1f}\"")
-            else:
-                print(f"  Bkg circle   : r={cfg.bkg_radius_arcsec:.1f}\"  "
-                      f"(manual centre  RA={cfg.bkg_ra}  Dec={cfg.bkg_dec})")
-        else:
-            # For subsequent obs: bkg_mode / bkg_ra / bkg_dec were already
-            # set by GUI (or were in cfg already).  Pass None so that
-            # extract_src_bkg_counts re-projects sky coords to this obs's WCS.
+        elif cfg.use_gui and i > 0:
+            # Shared mode, subsequent obs: cfg already has bkg_ra/bkg_dec set
+            # from the first-obs GUI.  Pass None for pixel coords so that
+            # extract_src_bkg_counts re-projects the sky position into this
+            # observation's pixel frame.
+            cfg_obs = cfg
             bkg_cx_evt = None
             bkg_cy_evt = None
 
+        else:
+            # No GUI: use cfg as-is for all observations.
+            cfg_obs = cfg
+            bkg_cx_evt = None
+            bkg_cy_evt = None
+
+        # Print aperture summary after possible GUI
+        print(f"\n  Src aperture : {cfg_obs.src_radius_arcsec:.1f}\"")
+        if cfg_obs.bkg_mode == 'annulus':
+            r_in = cfg_obs.src_radius_arcsec * cfg_obs.bkg_inner_factor
+            print(f"  Bkg annulus  : {r_in:.1f}\" — {cfg_obs.bkg_radius_arcsec:.1f}\"")
+        else:
+            print(f"  Bkg circle   : r={cfg_obs.bkg_radius_arcsec:.1f}\"  "
+                  f"(manual centre  RA={cfg_obs.bkg_ra}  Dec={cfg_obs.bkg_dec})")
+
         print()
         raw = _extract_counts_exposure_eef(
-            cfg, obs, bkg_cx_evt, bkg_cy_evt, e_lo, e_hi)
+            cfg_obs, obs, bkg_cx_evt, bkg_cy_evt, e_lo, e_hi)
         raw['obs_root']   = obs_root
         raw['obsid_str']  = obsid_str
         raw['evt_x']      = obs['evt_x']
         raw['evt_y']      = obs['evt_y']
         raw['src_coord']  = obs['src_coord']
-        # Keep GUI bkg pixel only for first obs (used in plots)
-        raw['bkg_cx_for_plot'] = (bkg_cx_first if i == 0
+        raw['cfg_obs']    = cfg_obs
+        # Pixel coords for plots: use GUI result for this obs (or best available)
+        raw['bkg_cx_for_plot'] = (bkg_cx_evt if bkg_cx_evt is not None
                                    else raw['bkg_cx_evt'])
-        raw['bkg_cy_for_plot'] = (bkg_cy_first if i == 0
+        raw['bkg_cy_for_plot'] = (bkg_cy_evt if bkg_cy_evt is not None
                                    else raw['bkg_cy_evt'])
         per_obs.append(raw)
 
@@ -525,7 +567,6 @@ def process_observation(cfg: SwiftConfig):
     if all(e is not None for e in eef_infos):
         eef_avg = (sum(r['t_eff'] * r['eef_info']['eef'] for r in per_obs)
                    / T_eff_total)
-        # Build a representative eef_info with the averaged EEF
         eef_info = dict(per_obs[0]['eef_info'])
         eef_info['eef'] = eef_avg
         if n_obs > 1:
@@ -534,15 +575,52 @@ def process_observation(cfg: SwiftConfig):
     else:
         eef_info = None
 
-    # Composite exp_stats (sum of primary stat; individual medians/means not merged)
+    # Composite exp_stats (sum)
     exp_stats_total = {
         'median'      : sum(r['exp_stats']['median']       for r in per_obs),
         'mean'        : sum(r['exp_stats']['mean']         for r in per_obs),
         'psf_weighted': sum(r['exp_stats']['psf_weighted'] for r in per_obs),
     }
 
-    mode = per_obs[0]['mode']   # should be the same for all (same obsid family)
+    mode = per_obs[0]['mode']
 
+    # ------------------------------------------------------------------ #
+    # Step 9a: per-obs UL (computed quietly; printed as brief summary)    #
+    # ------------------------------------------------------------------ #
+    if n_obs > 1:
+        print(f"\n{'='*70}")
+        print(f"  Per-observation summary  ({n_obs} observations)")
+        print(f"{'='*70}")
+        ul3_col = 'CR_kraft_aperture'
+        print(f"  {'Obs ID':>14}  {'N_src':>6}  {'B_scaled':>9}  "
+              f"{'t_eff (ks)':>11}  {'EEF':>6}  {'Kraft CR_ap (3σ)':>18}")
+        print("  " + "-" * 76)
+
+    for r in per_obs:
+        eef_val_i = r['eef_info']['eef'] if r['eef_info'] is not None else None
+        r['ul'] = _compute_ul_results(
+            r['N_src'], r['B_scaled'], r['t_eff'],
+            r['N_bkg_raw'], r['area_ratio'],
+            cfg.confidence_levels, eef=eef_val_i)
+        r['csv_rows'] = _build_csv_rows(
+            r['mode'], e_lo, e_hi,
+            r['N_src'], r['N_bkg_raw'], r['B_scaled'],
+            r['area_ratio'], r['t_eff'],
+            r['ul'], r['eef_info'], r['obsid_str'],
+            result_type='individual')
+
+        if n_obs > 1:
+            ul3_i = next((u for u in r['ul'] if u['cl'] >= 0.997), r['ul'][-1])
+            eef_str_i = (f"{r['eef_info']['eef']:.3f}"
+                         if r['eef_info'] is not None else "  N/A")
+            print(f"  {r['obsid_str']:>14}  {r['N_src']:>6}  "
+                  f"{r['B_scaled']:>9.2f}  {r['t_eff']/1e3:>11.3f}  "
+                  f"{eef_str_i:>6}  "
+                  f"{ul3_i['CR_kraft_aperture']:>18.4e}")
+
+    # ------------------------------------------------------------------ #
+    # Step 9b: results table on combined counts                            #
+    # ------------------------------------------------------------------ #
     if n_obs > 1:
         print(f"\n{'='*70}")
         print(f"  Combined totals across {n_obs} observations")
@@ -552,9 +630,6 @@ def process_observation(cfg: SwiftConfig):
         print(f"  B_scaled total   : {B_scaled_total:.3f} cts")
         print(f"  T_eff total      : {T_eff_total/1e3:.3f} ks")
 
-    # ------------------------------------------------------------------ #
-    # Step 9: results table on combined counts                             #
-    # ------------------------------------------------------------------ #
     eef_val    = eef_info['eef'] if eef_info is not None else None
     ul_results = _print_results_table(
         N_src_total, B_scaled_total, T_eff_total,
@@ -569,21 +644,27 @@ def process_observation(cfg: SwiftConfig):
             _save_plots(
                 r['evt_x'], r['evt_y'], r['cx_evt'], r['cy_evt'], r['pscale_evt'],
                 r['exp_meta'], r['exp_stats'],
-                f"XRT-{r['mode']}", e_lo, e_hi, cfg, out_dir,
+                f"XRT-{r['mode']}", e_lo, e_hi, r['cfg_obs'], out_dir,
                 r['src_coord'],
                 bkg_cx_evt=r['bkg_cx_for_plot'],
                 bkg_cy_evt=r['bkg_cy_for_plot'],
                 obsid_str=r['obsid_str'])
 
     # ------------------------------------------------------------------ #
-    # Step 11: CSV (combined result)                                        #
+    # Step 11: CSV — per-obs rows first, then combined row                  #
     # ------------------------------------------------------------------ #
-    obsid_label = (obsids[0] if n_obs == 1
-                   else "+".join(obsids))
-    csv_rows = _build_csv_rows(
+    obsid_label = (obsids[0] if n_obs == 1 else "+".join(obsids))
+    combined_csv_rows = _build_csv_rows(
         mode, e_lo, e_hi,
         N_src_total, N_bkg_raw_total, B_scaled_total,
-        area_ratio, T_eff_total, ul_results, eef_info, obsid_label)
+        area_ratio, T_eff_total, ul_results, eef_info, obsid_label,
+        result_type='combined')
+
+    all_csv_rows = []
+    if n_obs > 1:
+        for r in per_obs:
+            all_csv_rows.extend(r['csv_rows'])
+    all_csv_rows.extend(combined_csv_rows)
 
     return {
         'obsids'     : obsids,
@@ -598,7 +679,8 @@ def process_observation(cfg: SwiftConfig):
         'ul'         : ul_results,
         'energy'     : (e_lo, e_hi),
         'eef_info'   : eef_info,
-        'csv_rows'   : csv_rows,
+        'csv_rows'   : all_csv_rows,
+        'per_obs'    : per_obs,
     }
 
 
