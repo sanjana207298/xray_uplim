@@ -525,7 +525,7 @@ def combine_modules(results_list, cfg, obsid_label=None):
     """
     if obsid_label is None:
         obsid_label = (cfg.obsid if isinstance(cfg.obsid, str)
-                       else cfg.obsids[0] + '_coadd')
+                       else '+'.join(cfg.obsids))
 
     print(f"\n{'='*70}")
     print("  COMBINED  FPM-A + FPM-B")
@@ -691,7 +691,7 @@ def process_observations(cfg):
 
     # Label used in output filenames
     obsid_label = (cfg.obsid if isinstance(cfg.obsid, str)
-                   else f"{obsids[0]}_coadd")
+                   else '+'.join(obsids))
     out_dir_main = os.path.join(cfg.base_path, obsids[0], "ul_products")
 
     # Save original aperture settings so gui_per_obs=True can restore them

@@ -16,7 +16,7 @@ Or import and call from a notebook:
 # CONFIG  — edit this block
 # =============================================================================
 
-OBSERVATORY = 'xmm'    # 'nustar' | 'xmm' | 'swift'  ← set this first
+OBSERVATORY = 'nustar'    # 'nustar' | 'xmm' | 'swift'  ← set this first
 
 # ---------------------------------------------------------------------------
 # NuSTAR settings  (used when OBSERVATORY = 'nustar')
@@ -24,7 +24,7 @@ OBSERVATORY = 'xmm'    # 'nustar' | 'xmm' | 'swift'  ← set this first
 
 NUSTAR = dict(
     base_path         = "/Users/sanjanagupta/Documents/data/NuSTAR/2012ap/",
-    obsid             = "80802504004",
+    obsid             = ["80802504004", "80802504002"],
                         # or: obsid = ["80802504004", "80802504006"]
                         # Co-adding sums counts + exposures and gives one
                         # combined upper limit with individual per-obs rows too.
