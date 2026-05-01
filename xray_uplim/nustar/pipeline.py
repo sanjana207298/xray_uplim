@@ -5,11 +5,13 @@ Top-level orchestration: per-module extraction and combined results.
 
 Public API
 ----------
-run_uplim(...)        — convenience wrapper; builds a Config and runs everything
-process_module(...)   — extract counts + exposure for one FPM, return results dict
-combine_modules(...)  — sum across FPMs and print combined upper limits
+run_uplim(...)           — convenience wrapper; builds a Config and calls process_observations
+process_observations(cfg)— main entry point; handles single- and multi-obsid co-adding
+process_module(...)      — extract counts + exposure for one FPM (single-obsid, backward compat)
+combine_modules(...)     — sum across FPMs and print combined upper limits
 """
 
+import copy
 import csv
 import os
 import warnings
@@ -25,7 +27,51 @@ from ..plots      import radial_profile, exposure_histogram, region_image
 
 
 # =============================================================================
-# RESULTS TABLE  (shared by process_module and combine_modules)
+# CORE COMPUTATION (no printing, no I/O)
+# =============================================================================
+
+def _compute_ul_results(N_src, B_scaled, t_eff, N_bkg_raw, area_ratio,
+                        confidence_levels, eef=None):
+    """
+    Compute upper-limit results at every confidence level.  No printing.
+
+    Returns
+    -------
+    list of dicts, one per CL, with keys:
+        cl, CR_net, CR_sigma,
+        S_kraft,   CR_kraft_aperture,   CR_kraft_total   (None if no EEF),
+        S_gehrels, CR_gehrels_aperture, CR_gehrels_total (None if no EEF)
+    """
+    CR_net, CR_sigma = net_count_rate(N_src, B_scaled, t_eff,
+                                      N_bkg_raw, area_ratio)
+    results = []
+    for cl in confidence_levels:
+        S_k     = kraft_upper_limit(N_src, B_scaled, cl)
+        S_g     = gehrels_upper_limit(N_src, B_scaled, cl)
+        CR_k_ap = S_k / t_eff
+        CR_g_ap = S_g / t_eff
+        if eef is not None and eef > 0:
+            CR_k_tot = S_k / (t_eff * eef)
+            CR_g_tot = S_g / (t_eff * eef)
+        else:
+            CR_k_tot = None
+            CR_g_tot = None
+        results.append({
+            'cl':                  cl,
+            'CR_net':              CR_net,
+            'CR_sigma':            CR_sigma,
+            'S_kraft':             S_k,
+            'CR_kraft_aperture':   CR_k_ap,
+            'CR_kraft_total':      CR_k_tot,
+            'S_gehrels':           S_g,
+            'CR_gehrels_aperture': CR_g_ap,
+            'CR_gehrels_total':    CR_g_tot,
+        })
+    return results
+
+
+# =============================================================================
+# RESULTS TABLE
 # =============================================================================
 
 def print_results_table(N_src, B_scaled, t_eff, N_bkg_raw, area_ratio,
@@ -33,34 +79,19 @@ def print_results_table(N_src, B_scaled, t_eff, N_bkg_raw, area_ratio,
     """
     Compute and print all three methods at every confidence level.
 
-    Aperture columns (always printed)
-    ----------------------------------
-    CL              — one-sided confidence level
-    Net CR          — (N_src - B_scaled) / t_eff   [point estimate, not a UL]
-    Kraft S_ul      — Kraft+91 upper limit in counts
-    Kraft CR_ap     — Kraft+91 aperture count-rate upper limit (cts/s)
-    Gehrels S_ul / CR_ap — Gehrels 1986 cross-check (aperture)
-
-    EEF-corrected columns (printed only when eef is not None)
-    ----------------------------------------------------------
-    Kraft CR_tot    — EEF-corrected total source rate  = S_ul / (t_eff * EEF)
-    Gehrels CR_tot  — same for Gehrels
-
     Parameters
     ----------
     eef : float or None
-        Encircled energy fraction at the source aperture radius.  If None,
-        EEF-corrected columns are omitted.
+        Encircled energy fraction.  If None, EEF-corrected columns are omitted.
 
     Returns
     -------
-    list of dicts, one per confidence level, with keys:
-        cl, CR_net, CR_sigma,
-        S_kraft,   CR_kraft_aperture,   CR_kraft_total (None if no EEF),
-        S_gehrels, CR_gehrels_aperture, CR_gehrels_total (None if no EEF)
+    list of dicts — same as _compute_ul_results()
     """
-    CR_net, CR_sigma = net_count_rate(N_src, B_scaled, t_eff,
-                                      N_bkg_raw, area_ratio)
+    results = _compute_ul_results(N_src, B_scaled, t_eff, N_bkg_raw,
+                                  area_ratio, confidence_levels, eef=eef)
+    CR_net   = results[0]['CR_net']
+    CR_sigma = results[0]['CR_sigma']
 
     print(f"\n  Point estimate  (N_src - B) / t_eff  [NOT an upper limit]")
     print(f"    = ({N_src} - {B_scaled:.1f}) / {t_eff:.1f} s")
@@ -69,7 +100,6 @@ def print_results_table(N_src, B_scaled, t_eff, N_bkg_raw, area_ratio,
         print(f"    (Negative — source aperture below expected background: "
               f"clean non-detection)")
 
-    # -- Header ---------------------------------------------------------------
     print(f"\n  Upper limits:")
     if eef is not None:
         header = (
@@ -87,43 +117,20 @@ def print_results_table(N_src, B_scaled, t_eff, N_bkg_raw, area_ratio,
     print(header)
     print(divider)
 
-    results = []
-    for cl in confidence_levels:
-        S_k  = kraft_upper_limit(N_src, B_scaled, cl)
-        S_g  = gehrels_upper_limit(N_src, B_scaled, cl)
-        CR_k_ap = S_k / t_eff
-        CR_g_ap = S_g / t_eff
-
-        if eef is not None and eef > 0:
-            CR_k_tot = S_k / (t_eff * eef)
-            CR_g_tot = S_g / (t_eff * eef)
-        else:
-            CR_k_tot = None
-            CR_g_tot = None
-
-        results.append({
-            'cl':                  cl,
-            'CR_net':              CR_net,
-            'CR_sigma':            CR_sigma,
-            'S_kraft':             S_k,
-            'CR_kraft_aperture':   CR_k_ap,
-            'CR_kraft_total':      CR_k_tot,
-            'S_gehrels':           S_g,
-            'CR_gehrels_aperture': CR_g_ap,
-            'CR_gehrels_total':    CR_g_tot,
-        })
-
+    for r in results:
         if eef is not None:
             print(
-                f"  {cl:8.4f}  {CR_net:+13.4e}  "
-                f"{S_k:10.3f}  {CR_k_ap:13.4e}  {CR_k_tot:13.4e}  "
-                f"{S_g:10.3f}  {CR_g_ap:13.4e}  {CR_g_tot:13.4e}"
+                f"  {r['cl']:8.4f}  {r['CR_net']:+13.4e}  "
+                f"{r['S_kraft']:10.3f}  {r['CR_kraft_aperture']:13.4e}  "
+                f"{r['CR_kraft_total']:13.4e}  "
+                f"{r['S_gehrels']:10.3f}  {r['CR_gehrels_aperture']:13.4e}  "
+                f"{r['CR_gehrels_total']:13.4e}"
             )
         else:
             print(
-                f"  {cl:8.4f}  {CR_net:+13.4e}  "
-                f"{S_k:10.3f}  {CR_k_ap:13.4e}  "
-                f"{S_g:10.3f}  {CR_g_ap:13.4e}"
+                f"  {r['cl']:8.4f}  {r['CR_net']:+13.4e}  "
+                f"{r['S_kraft']:10.3f}  {r['CR_kraft_aperture']:13.4e}  "
+                f"{r['S_gehrels']:10.3f}  {r['CR_gehrels_aperture']:13.4e}"
             )
 
     print(divider)
@@ -142,27 +149,25 @@ def print_results_table(N_src, B_scaled, t_eff, N_bkg_raw, area_ratio,
 # CSV OUTPUT
 # =============================================================================
 
-def write_results_csv(rows, out_dir, obsid):
+def write_results_csv(rows, out_dir, obsid_label):
     """
-    Write upper-limit results to a CSV file.
-
-    One row per (module, confidence-level) combination, plus combined rows
-    (module='AB') when both FPMs are processed.
+    Write upper-limit results to a CSV (and .xlsx) file.
 
     Parameters
     ----------
-    rows    : list of dicts — each dict is one row; see _build_csv_rows()
-    out_dir : str           — output directory (created if absent)
-    obsid   : str
+    rows        : list of dicts
+    out_dir     : str  — output directory (created if absent)
+    obsid_label : str  — used in the output filename
 
     Returns
     -------
-    csv_path : str — absolute path of the written file
+    csv_path : str
     """
     os.makedirs(out_dir, exist_ok=True)
-    csv_path = os.path.join(out_dir, f"nustar_uplim_{obsid}.csv")
+    csv_path = os.path.join(out_dir, f"nustar_uplim_{obsid_label}.csv")
 
     fieldnames = [
+        'result_type',
         'obsid', 'date_obs', 'module', 'energy_lo_kev', 'energy_hi_kev',
         'N_src', 'N_bkg_raw', 'B_scaled', 'area_ratio',
         't_eff_s',
@@ -183,7 +188,6 @@ def write_results_csv(rows, out_dir, obsid):
 
     print(f"\n  Results written to: {csv_path}")
 
-    # Also write Excel-native .xlsx so obsids with leading zeros display correctly
     from ..output import write_results_xlsx
     xlsx_path = csv_path.replace('.csv', '.xlsx')
     if write_results_xlsx(rows, fieldnames, xlsx_path, text_cols=('obsid',)):
@@ -194,18 +198,20 @@ def write_results_csv(rows, out_dir, obsid):
 
 def _build_csv_rows(module, e_lo, e_hi, N_src, N_bkg_raw, B_scaled,
                     area_ratio, t_eff, ul_results, eef_info, obsid,
-                    date_obs=''):
+                    date_obs='', result_type='individual'):
     """
     Build a list of CSV row dicts (one per confidence level) for one module.
 
     Parameters
     ----------
-    eef_info : dict or None — return value of compute_eef(), or None if skipped
-    date_obs : str          — DATE-OBS from event file header (ISO 8601)
+    eef_info    : dict or None — return value of compute_eef(), or None if skipped
+    date_obs    : str          — DATE-OBS from event file header (ISO 8601)
+    result_type : str          — 'individual' (per-obs) or 'combined' (co-added)
     """
     rows = []
     for r in ul_results:
         row = {
+            'result_type':        result_type,
             'obsid':              obsid,
             'date_obs':           date_obs,
             'module':             module,
@@ -225,17 +231,17 @@ def _build_csv_rows(module, e_lo, e_hi, N_src, N_bkg_raw, B_scaled,
             'CR_gehrels_aperture': f"{r['CR_gehrels_aperture']:.6e}",
         }
         if eef_info is not None:
-            row['theta_arcmin']    = (f"{eef_info['theta_arcmin']:.4f}"
-                                      if eef_info['theta_arcmin'] is not None else '')
-            row['eef']             = f"{eef_info['eef']:.6f}"
-            row['psf_file']        = '; '.join(
-                                         os.path.basename(f)
-                                         for f in eef_info['psf_files'])
+            row['theta_arcmin']     = (f"{eef_info['theta_arcmin']:.4f}"
+                                       if eef_info['theta_arcmin'] is not None else '')
+            row['eef']              = f"{eef_info['eef']:.6f}"
+            row['psf_file']         = '; '.join(
+                                          os.path.basename(f)
+                                          for f in eef_info['psf_files'])
             row['eef_extrapolated'] = eef_info['extrapolated']
-            row['eef_capped']      = (f"{eef_info['eef_capped']:.6f}"
-                                      if eef_info['eef_capped'] is not None else '')
-            row['eef_extrap']      = (f"{eef_info['eef_extrap']:.6f}"
-                                      if eef_info['eef_extrap'] is not None else '')
+            row['eef_capped']       = (f"{eef_info['eef_capped']:.6f}"
+                                       if eef_info['eef_capped'] is not None else '')
+            row['eef_extrap']       = (f"{eef_info['eef_extrap']:.6f}"
+                                       if eef_info['eef_extrap'] is not None else '')
             if r['CR_kraft_total'] is not None:
                 row['CR_kraft_total']   = f"{r['CR_kraft_total']:.6e}"
                 row['CR_gehrels_total'] = f"{r['CR_gehrels_total']:.6e}"
@@ -244,40 +250,49 @@ def _build_csv_rows(module, e_lo, e_hi, N_src, N_bkg_raw, B_scaled,
 
 
 # =============================================================================
-# PER-MODULE PIPELINE
+# PER-MODULE EXTRACTION (single obsid, internal helper)
 # =============================================================================
 
-def process_module(module, src_coord, cfg):
+def _load_and_extract_module(module, obsid_str, obs_root, src_coord, cfg,
+                              run_gui=False):
     """
-    Full extraction and result calculation for one FPM.
+    Load files and extract raw counts / exposure / EEF for one FPM of one
+    observation.  Prints diagnostics but does NOT print the UL table.
 
     Parameters
     ----------
-    module    : str              — 'A' or 'B'
-    src_coord : SkyCoord         — source sky position
-    cfg       : Config
+    module    : str      — 'A' or 'B'
+    obsid_str : str      — observation ID (used for file lookup and plot names)
+    obs_root  : str      — <base_path>/<obsid_str>
+    src_coord : SkyCoord
+    cfg       : Config   — may be mutated by the GUI
+    run_gui   : bool     — whether to open the interactive region selector
 
     Returns
     -------
     dict with keys:
-        module, N_src, N_bkg_raw, B_scaled, area_ratio, net_counts,
-        t_eff_s, exp_stats, ul, energy, eef_info, csv_rows
+        module, obsid_str, date_obs,
+        N_src, N_bkg_raw, B_scaled, area_ratio,
+        t_eff, exp_stats, eef_info,
+        e_lo, e_hi,
+        bkg_cx_evt, bkg_cy_evt
     """
     e_lo, e_hi = cfg.resolve_energy_band()
-    out_dir    = os.path.join(cfg.base_path, cfg.obsid, "ul_products")
+    out_dir    = os.path.join(obs_root, "ul_products")
     os.makedirs(out_dir, exist_ok=True)
 
     print(f"\n{'='*70}")
-    print(f"  FPM{module}")
+    print(f"  FPM{module}  [obs: {obsid_str}]")
     print(f"{'='*70}")
 
     # -- Locate and load files ------------------------------------------------
-    evt_file, exp_file = locate_files(cfg.base_path, cfg.obsid, module)
+    evt_file, exp_file = locate_files(cfg.base_path, obsid_str, module)
     print(f"  Event file  : {os.path.basename(evt_file)}")
     print(f"  Expo map    : {os.path.basename(exp_file)}")
 
     evts, evt_hdr, PI_lo, PI_hi = load_events(evt_file, e_lo, e_hi)
     date_obs = str(evt_hdr.get('DATE-OBS', '')).strip()
+    print(f"  Date-Obs    : {date_obs or '(not in header)'}")
     print(f"  Energy filter [{e_lo:.1f}-{e_hi:.1f} keV]  "
           f"PI=[{PI_lo},{PI_hi}]  ->  {len(evts):,} events")
 
@@ -305,12 +320,10 @@ def process_module(module, src_coord, cfg):
         print(f"  Source position is inside the event image. Good.")
 
     # -- Interactive region selector ------------------------------------------
-    # bkg_cx_evt / bkg_cy_evt track the background centre in event pixel space.
-    # They equal the source centre in annulus mode, or differ in manual mode.
     bkg_cx_evt = cx_evt
     bkg_cy_evt = cy_evt
 
-    if cfg.use_gui:
+    if run_gui:
         from ..region_selector import select_regions_interactive
         print(f"\n  Opening interactive region selector for FPM{module}...")
         sel = select_regions_interactive(
@@ -321,23 +334,20 @@ def process_module(module, src_coord, cfg):
         bkg_cx_evt = sel['bkg_cx']
         bkg_cy_evt = sel['bkg_cy']
 
-        # Write confirmed radii back to cfg so plots/EEF see updated values
+        # Write confirmed radii back to cfg so subsequent obs use them
         cfg.src_radius_arcsec = sel['src_radius_arcsec']
         cfg.bkg_radius_arcsec = sel['bkg_radius_arcsec']
         cfg.bkg_inner_factor  = sel['bkg_inner_factor']
 
-        # If user moved background to a different location, switch to manual mode
+        # If user moved background, switch to manual mode (sky coords stored in cfg)
         bkg_moved = (abs(bkg_cx_evt - cx_evt) > 1.0 or
                      abs(bkg_cy_evt - cy_evt) > 1.0)
         if bkg_moved:
             try:
                 from astropy.wcs import WCS as _WCS
                 _wcs = _WCS(evt_hdr, naxis=2)
-                # pixel_to_world_values always returns plain floats (avoids
-                # the 'list has no attribute ra' issue with multi-axis WCS)
                 _bkg_ra, _bkg_dec = _wcs.pixel_to_world_values(
                     bkg_cx_evt - 1, bkg_cy_evt - 1)
-                # Only commit to manual mode after all conversions succeed
                 cfg.bkg_mode = 'manual'
                 cfg.bkg_ra   = str(float(_bkg_ra))
                 cfg.bkg_dec  = str(float(_bkg_dec))
@@ -347,10 +357,15 @@ def process_module(module, src_coord, cfg):
                 warnings.warn(
                     f"Could not convert background pixel to RA/Dec ({_e}). "
                     "Falling back to annulus mode.")
-                # Make sure bkg_mode is NOT left as 'manual'
                 cfg.bkg_mode = 'annulus'
                 bkg_cx_evt   = cx_evt
                 bkg_cy_evt   = cy_evt
+
+    elif cfg.bkg_mode == 'manual' and cfg.bkg_ra and cfg.bkg_dec:
+        # Re-project manual background sky coords into this obs's pixel frame
+        bkg_coord = parse_coord(cfg.bkg_ra, cfg.bkg_dec)
+        bkg_cx_evt, bkg_cy_evt, _ = sky_to_evt_pixel(
+            bkg_coord.ra.deg, bkg_coord.dec.deg, evt_hdr)
 
     src_radius_arcsec = cfg.src_radius_arcsec
     bkg_radius_arcsec = cfg.bkg_radius_arcsec
@@ -376,7 +391,9 @@ def process_module(module, src_coord, cfg):
 
     # -- Background counts ----------------------------------------------------
     if cfg.bkg_mode == 'annulus':
-        in_annulus = (d_src > r_bkg_in_evt) & (d_src <= r_bkg_out_evt)
+        d_bkg_center = np.sqrt((evt_x - bkg_cx_evt)**2 +
+                               (evt_y - bkg_cy_evt)**2)
+        in_annulus = (d_bkg_center > r_bkg_in_evt) & (d_bkg_center <= r_bkg_out_evt)
         N_bkg_raw  = int(np.sum(in_annulus))
         area_src   = np.pi * r_src_evt**2
         area_bkg   = np.pi * (r_bkg_out_evt**2 - r_bkg_in_evt**2)
@@ -420,7 +437,7 @@ def process_module(module, src_coord, cfg):
     print(f"\n  Using t_eff = {t_eff/1e3:.3f} ks  ({cfg.exp_stat})")
 
     # -- EEF from CALDB PSF ---------------------------------------------------
-    eef_info = None
+    eef_info  = None
     caldb_dir = cfg.caldb_dir if cfg.caldb_dir else None
 
     try:
@@ -448,25 +465,13 @@ def process_module(module, src_coord, cfg):
             "Set caldb_dir= (or $CALDB) to enable EEF-corrected upper limits.",
             UserWarning, stacklevel=2)
 
-    # -- Results table --------------------------------------------------------
-    eef_val = eef_info['eef'] if eef_info is not None else None
-    ul_results = print_results_table(
-        N_src, B_scaled, t_eff, N_bkg_raw, area_ratio,
-        cfg.confidence_levels, eef=eef_val)
-
-    # -- CSV rows -------------------------------------------------------------
-    csv_rows = _build_csv_rows(
-        module, e_lo, e_hi, N_src, N_bkg_raw, B_scaled,
-        area_ratio, t_eff, ul_results, eef_info, cfg.obsid,
-        date_obs=date_obs)
-
     # -- Diagnostic plots -----------------------------------------------------
     if cfg.save_plots:
         radial_profile(evt_x, evt_y, cx_evt, cy_evt, pscale_evt,
-                       f'FPM{module}', e_lo, e_hi, cfg.obsid, cfg, out_dir)
+                       f'FPM{module}', e_lo, e_hi, obsid_str, cfg, out_dir)
         exposure_histogram(exp_meta, exp_stats, f'FPM{module}', cfg, out_dir)
         region_image(evt_x, evt_y, cx_evt, cy_evt, pscale_evt,
-                     f'FPM{module}', e_lo, e_hi, cfg.obsid, cfg, out_dir,
+                     f'FPM{module}', e_lo, e_hi, obsid_str, cfg, out_dir,
                      src_ra_deg=src_coord.ra.deg,
                      src_dec_deg=src_coord.dec.deg,
                      bkg_cx_evt=bkg_cx_evt,
@@ -474,18 +479,19 @@ def process_module(module, src_coord, cfg):
 
     return {
         'module':     module,
+        'obsid_str':  obsid_str,
         'date_obs':   date_obs,
         'N_src':      N_src,
         'N_bkg_raw':  N_bkg_raw,
         'B_scaled':   B_scaled,
         'area_ratio': area_ratio,
-        'net_counts': N_src - B_scaled,
-        't_eff_s':    t_eff,
+        't_eff':      t_eff,
         'exp_stats':  exp_stats,
-        'ul':         ul_results,
-        'energy':     (e_lo, e_hi),
         'eef_info':   eef_info,
-        'csv_rows':   csv_rows,
+        'e_lo':       e_lo,
+        'e_hi':       e_hi,
+        'bkg_cx_evt': bkg_cx_evt,
+        'bkg_cy_evt': bkg_cy_evt,
     }
 
 
@@ -493,32 +499,34 @@ def process_module(module, src_coord, cfg):
 # COMBINED (FPM-A + FPM-B)
 # =============================================================================
 
-def combine_modules(results_list, cfg):
+def combine_modules(results_list, cfg, obsid_label=None):
     """
     Sum counts across FPMs and compute combined results.
 
     Combining strategy
     ------------------
-    N_total  = sum(N_src)       counts are additive across independent detectors
-    B_total  = sum(B_scaled)    each B already corrected to source aperture area
-    t_comb   = sum(t_eff)       exposures add — correct for additive counts
+    N_total  = sum(N_src)      — counts additive across independent detectors
+    B_total  = sum(B_scaled)   — each B already scaled to source aperture area
+    t_comb   = sum(t_eff_s)    — exposures add (correct for additive counts)
 
-    For the EEF-corrected combined rate, the correct denominator is:
-
-        sum_i( t_eff_i * EEF_i )
-
-    because each FPM contributes counts collected over its own exposure and
-    through its own aperture EEF.
+    EEF denominator:  sum_i(t_eff_i * EEF_i)
+    — each FPM contributes counts collected through its own EEF.
+    Represented as an effective EEF = sum(t*EEF) / t_comb.
 
     Parameters
     ----------
-    results_list : list of dicts returned by process_module()
+    results_list : list of dicts from process_module() or per-module combined dicts
     cfg          : Config
+    obsid_label  : str or None — obsid string for CSV rows; defaults to cfg.obsid
 
     Returns
     -------
     list of combined CSV row dicts
     """
+    if obsid_label is None:
+        obsid_label = (cfg.obsid if isinstance(cfg.obsid, str)
+                       else cfg.obsids[0] + '_coadd')
+
     print(f"\n{'='*70}")
     print("  COMBINED  FPM-A + FPM-B")
     print(f"{'='*70}")
@@ -526,9 +534,9 @@ def combine_modules(results_list, cfg):
     N_total     = sum(r['N_src']     for r in results_list)
     B_total     = sum(r['B_scaled']  for r in results_list)
     N_bkg_total = sum(r['N_bkg_raw'] for r in results_list)
-    area_ratio  = results_list[0]['area_ratio']   # same aperture geometry
+    area_ratio  = results_list[0]['area_ratio']
     t_vals      = [r['t_eff_s'] for r in results_list]
-    t_comb      = float(np.sum(t_vals))           # SUM, not mean
+    t_comb      = float(np.sum(t_vals))
 
     print(f"  Combined N_src    : {N_total}")
     print(f"  Combined B_scaled : {B_total:.3f} cts")
@@ -537,32 +545,26 @@ def combine_modules(results_list, cfg):
     print(f"  t_eff (combined)  : {t_comb/1e3:.3f} ks  "
           f"[sum — correct for additive counts]")
 
-    # -- Combined EEF denominator ---------------------------------------------
-    # EEF-weighted combined exposure: sum(t_i * EEF_i)
+    # -- Combined EEF ---------------------------------------------------------
     eef_combined_info = None
     all_have_eef = all(r['eef_info'] is not None for r in results_list)
 
     if all_have_eef:
         t_eef_sum = sum(
             r['t_eff_s'] * r['eef_info']['eef'] for r in results_list)
-        # Store a synthetic eef_info for the combined result so CSV and
-        # print_results_table can use it.  We fabricate a single effective EEF
-        # as t_eef_sum / t_comb so that S_ul / (t_comb * eef_eff) equals the
-        # correct expression S_ul / t_eef_sum.
         eef_eff = t_eef_sum / t_comb if t_comb > 0 else None
 
-        # Report individual EEFs
         print(f"\n  -- Combined EEF -------------------------------------------")
         for r in results_list:
             ei = r['eef_info']
-            print(f"    FPM-{r['module']}: theta = {ei['theta_arcmin']:.3f}'  "
+            theta_str = (f"{ei['theta_arcmin']:.3f}'"
+                         if ei['theta_arcmin'] is not None else 'N/A')
+            print(f"    FPM-{r['module']}: theta = {theta_str}  "
                   f"EEF = {ei['eef']:.4f}  "
                   f"t_eff * EEF = {r['t_eff_s'] * ei['eef'] / 1e3:.3f} ks")
         print(f"    Combined t_eff * EEF denominator : {t_eef_sum/1e3:.3f} ks")
         print(f"    Effective EEF (= sum(t*EEF)/t_comb) : {eef_eff:.4f}")
 
-        # Build a minimal eef_info dict for _build_csv_rows.
-        # Collect all PSF files used across both FPMs for the CSV record.
         all_psf_files = []
         for r in results_list:
             for f in r['eef_info']['psf_files']:
@@ -571,7 +573,7 @@ def combine_modules(results_list, cfg):
 
         eef_combined_info = {
             'eef':          eef_eff,
-            'theta_arcmin': None,   # per-FPM angles are in individual rows
+            'theta_arcmin': None,
             'pointing_ra':  None,
             'pointing_dec': None,
             'psf_files':    all_psf_files,
@@ -591,61 +593,113 @@ def combine_modules(results_list, cfg):
         cfg.confidence_levels, eef=eef_eff)
 
     # -- Combined CSV rows ----------------------------------------------------
-    # Use date from first module's result (same observation, same date)
     date_obs_combined = results_list[0].get('date_obs', '')
     csv_rows = _build_csv_rows(
         'AB', e_lo, e_hi, N_total, N_bkg_total, B_total,
-        area_ratio, t_comb, ul_results, eef_combined_info, cfg.obsid,
-        date_obs=date_obs_combined)
+        area_ratio, t_comb, ul_results, eef_combined_info, obsid_label,
+        date_obs=date_obs_combined, result_type='combined')
 
     return csv_rows
 
 
 # =============================================================================
-# CONVENIENCE ENTRY POINT
+# SINGLE-MODULE PUBLIC WRAPPER  (backward compat)
 # =============================================================================
 
-def run_uplim(base_path, obsid, ra, dec, **kwargs):
+def process_module(module, src_coord, cfg):
     """
-    Run the full upper-limit pipeline with minimal boilerplate.
+    Full extraction and result calculation for one FPM (single-obsid).
+
+    This is a thin wrapper around _load_and_extract_module that also prints
+    the UL table and builds CSV rows.  Kept for backward compatibility.
 
     Parameters
     ----------
-    base_path : str   — root data directory
-    obsid     : str   — NuSTAR observation ID
-    ra        : str or float  — source RA
-    dec       : str or float  — source Dec
-    **kwargs  : any Config field by name, e.g.
-                    src_radius_arcsec=30.0,
-                    energy_band='soft',
-                    confidence_levels=[0.9973],
-                    caldb_dir='/path/to/caldb',
-                    save_plots=False
+    module    : str    — 'A' or 'B'
+    src_coord : SkyCoord
+    cfg       : Config
 
     Returns
     -------
-    list of result dicts (one per module processed)
-
-    Example
-    -------
-    >>> from nustar_uplim import run_uplim
-    >>> results = run_uplim(
-    ...     base_path = "/data/NuSTAR/2017gas/",
-    ...     obsid     = "80202052002",
-    ...     ra        = "20:17:11.360",
-    ...     dec       = "+58:12:08.10",
-    ...     energy_band       = 'soft',
-    ...     confidence_levels = [0.9545, 0.9973],
-    ...     caldb_dir         = "/path/to/caldb",
-    ... )
+    dict compatible with combine_modules() and the old API.
     """
-    cfg = Config(base_path=base_path, obsid=obsid, ra=ra, dec=dec, **kwargs)
-    cfg.validate()
+    obsid_str = cfg.obsids[0]
+    obs_root  = os.path.join(cfg.base_path, obsid_str)
 
+    raw = _load_and_extract_module(
+        module, obsid_str, obs_root, src_coord, cfg, run_gui=cfg.use_gui)
+
+    e_lo, e_hi  = raw['e_lo'], raw['e_hi']
+    eef_val     = raw['eef_info']['eef'] if raw['eef_info'] is not None else None
+
+    ul_results = print_results_table(
+        raw['N_src'], raw['B_scaled'], raw['t_eff'], raw['N_bkg_raw'],
+        raw['area_ratio'], cfg.confidence_levels, eef=eef_val)
+
+    csv_rows = _build_csv_rows(
+        module, e_lo, e_hi, raw['N_src'], raw['N_bkg_raw'], raw['B_scaled'],
+        raw['area_ratio'], raw['t_eff'], ul_results, raw['eef_info'], obsid_str,
+        date_obs=raw['date_obs'], result_type='individual')
+
+    return {
+        'module':     module,
+        'date_obs':   raw['date_obs'],
+        'N_src':      raw['N_src'],
+        'N_bkg_raw':  raw['N_bkg_raw'],
+        'B_scaled':   raw['B_scaled'],
+        'area_ratio': raw['area_ratio'],
+        'net_counts': raw['N_src'] - raw['B_scaled'],
+        't_eff_s':    raw['t_eff'],
+        'exp_stats':  raw['exp_stats'],
+        'ul':         ul_results,
+        'energy':     (e_lo, e_hi),
+        'eef_info':   raw['eef_info'],
+        'csv_rows':   csv_rows,
+    }
+
+
+# =============================================================================
+# MULTI-OBSID MAIN ENTRY POINT
+# =============================================================================
+
+def process_observations(cfg):
+    """
+    Main entry point for NuSTAR upper-limit calculation.
+
+    Handles both single-obsid and multi-obsid (co-adding) runs transparently.
+    When multiple obsids are given, per-observation results are reported
+    alongside the combined co-added upper limit.
+
+    Co-adding is exact Bayesian Poisson statistics:
+        N_src_total = Σ N_src_i    (sum of independent Poisson r.v.s → Poisson)
+        B_total     = Σ B_scaled_i
+        t_total     = Σ t_eff_i
+    Kraft+1991 is then applied to the totals — this is not an approximation.
+
+    Parameters
+    ----------
+    cfg : Config
+
+    Returns
+    -------
+    per_obs_raw : dict  {obsid_str: {module: raw_data_dict}}
+    """
+    obsids   = cfg.obsids
+    n_obs    = len(obsids)
+    src_coord = parse_coord(cfg.ra, cfg.dec)
     e_lo, e_hi = cfg.resolve_energy_band()
-    src_coord  = parse_coord(cfg.ra, cfg.dec)
-    out_dir    = os.path.join(cfg.base_path, cfg.obsid, "ul_products")
 
+    # Label used in output filenames
+    obsid_label = (cfg.obsid if isinstance(cfg.obsid, str)
+                   else f"{obsids[0]}_coadd")
+    out_dir_main = os.path.join(cfg.base_path, obsids[0], "ul_products")
+
+    # Save original aperture settings so gui_per_obs=True can restore them
+    _orig_aperture = {k: getattr(cfg, k) for k in (
+        'src_radius_arcsec', 'bkg_radius_arcsec', 'bkg_inner_factor',
+        'bkg_mode', 'bkg_ra', 'bkg_dec')}
+
+    # -- Print header ---------------------------------------------------------
     print("NuSTAR Non-Detection Upper Limit")
     print("=" * 70)
     print(f"Source  :  RA = {src_coord.ra.deg:.6f} deg  "
@@ -665,22 +719,217 @@ def run_uplim(base_path, obsid, ra, dec, **kwargs):
             print(f"CALDB   :  {caldb_env}  ($CALDB)")
         else:
             print(f"CALDB   :  not set — EEF correction will be skipped")
+    if n_obs > 1:
+        print(f"Obs IDs :  {', '.join(obsids)}  [{n_obs} observations — co-adding]")
+    else:
+        print(f"Obs ID  :  {obsids[0]}")
 
-    # -- Per-module -----------------------------------------------------------
-    all_results = []
-    all_csv_rows = []
-    for mod in cfg.modules:
-        result = process_module(mod, src_coord, cfg)
-        all_results.append(result)
-        all_csv_rows.extend(result['csv_rows'])
+    # -- Load and extract every (obs, module) pair ----------------------------
+    # per_obs_raw[obsid_str][module] = dict from _load_and_extract_module
+    per_obs_raw = {}
 
-    # -- Combined (if both FPMs processed) ------------------------------------
-    if len(all_results) > 1:
-        combined_rows = combine_modules(all_results, cfg)
-        all_csv_rows.extend(combined_rows)
+    for i, obsid_str in enumerate(obsids):
+        obs_root = os.path.join(cfg.base_path, obsid_str)
 
-    # -- Write CSV ------------------------------------------------------------
-    write_results_csv(all_csv_rows, out_dir, obsid)
+        if n_obs > 1:
+            print(f"\n{'#'*70}")
+            print(f"  Observation {i+1}/{n_obs}:  {obsid_str}")
+            print(f"{'#'*70}")
+
+        # Determine the config object and GUI mode for this observation
+        if cfg.use_gui and cfg.gui_per_obs:
+            # Independent GUI for each obs: restore original aperture each time
+            cfg_obs = copy.copy(cfg)
+            for k, v in _orig_aperture.items():
+                setattr(cfg_obs, k, v)
+            run_gui_this_obs = True
+        elif cfg.use_gui and i == 0:
+            # GUI for first obs only; subsequent obs inherit cfg settings
+            cfg_obs = cfg
+            run_gui_this_obs = True
+        else:
+            cfg_obs = cfg
+            run_gui_this_obs = False
+
+        per_obs_raw[obsid_str] = {}
+        for module in cfg.modules:
+            raw = _load_and_extract_module(
+                module, obsid_str, obs_root, src_coord, cfg_obs,
+                run_gui=run_gui_this_obs)
+            per_obs_raw[obsid_str][module] = raw
+
+    # -- Per-module: individual ULs + combined across obsids ------------------
+    all_csv_rows        = []
+    module_combined_ab  = []   # aggregated module results for the AB combine step
+
+    for module in cfg.modules:
+        print(f"\n{'='*70}")
+        if n_obs > 1:
+            print(f"  FPM{module} — co-added across {n_obs} observations")
+        else:
+            print(f"  FPM{module} — results")
+        print(f"{'='*70}")
+
+        # Individual per-obs ULs (only printed/recorded when n_obs > 1)
+        if n_obs > 1:
+            print(f"\n  -- Individual per-observation upper limits (FPM{module}) --")
+            for obsid_str in obsids:
+                raw     = per_obs_raw[obsid_str][module]
+                eef_ind = raw['eef_info']['eef'] if raw['eef_info'] else None
+                ul_ind  = _compute_ul_results(
+                    raw['N_src'], raw['B_scaled'], raw['t_eff'],
+                    raw['N_bkg_raw'], raw['area_ratio'],
+                    cfg.confidence_levels, eef=eef_ind)
+
+                print(f"\n  Obs {obsid_str}:")
+                print(f"    N_src={raw['N_src']}  B={raw['B_scaled']:.2f}  "
+                      f"t_eff={raw['t_eff']/1e3:.3f} ks")
+                for r in ul_ind:
+                    tot_str = (f"  Kraft CR_tot={r['CR_kraft_total']:.3e}"
+                               if r['CR_kraft_total'] is not None else '')
+                    print(f"    CL={r['cl']:.4f}  "
+                          f"Kraft CR_ap={r['CR_kraft_aperture']:.3e}{tot_str}")
+
+                ind_rows = _build_csv_rows(
+                    module, e_lo, e_hi,
+                    raw['N_src'], raw['N_bkg_raw'], raw['B_scaled'],
+                    raw['area_ratio'], raw['t_eff'], ul_ind, raw['eef_info'],
+                    obsid_str, date_obs=raw['date_obs'], result_type='individual')
+                all_csv_rows.extend(ind_rows)
+
+        # Combined across obsids for this module
+        N_total     = sum(per_obs_raw[oid][module]['N_src']     for oid in obsids)
+        B_total     = sum(per_obs_raw[oid][module]['B_scaled']  for oid in obsids)
+        N_bkg_total = sum(per_obs_raw[oid][module]['N_bkg_raw'] for oid in obsids)
+        area_ratio  = per_obs_raw[obsids[0]][module]['area_ratio']
+        t_total     = sum(per_obs_raw[oid][module]['t_eff']     for oid in obsids)
+
+        # EEF: exposure-weighted average across obsids
+        all_eef = [per_obs_raw[oid][module]['eef_info'] for oid in obsids]
+        if all(e is not None for e in all_eef):
+            t_eef_sum = sum(
+                per_obs_raw[oid][module]['t_eff'] *
+                per_obs_raw[oid][module]['eef_info']['eef']
+                for oid in obsids)
+            eef_avg = t_eef_sum / t_total if t_total > 0 else None
+
+            all_psf_files = []
+            for ei in all_eef:
+                for f in ei['psf_files']:
+                    if f not in all_psf_files:
+                        all_psf_files.append(f)
+
+            eef_combined_info = {
+                'eef':          eef_avg,
+                'theta_arcmin': None,   # individual values in per-obs rows
+                'pointing_ra':  None,
+                'pointing_dec': None,
+                'psf_files':    all_psf_files,
+                'pix_scale_arcsec': None,
+                'extrapolated': any(e['extrapolated'] for e in all_eef),
+                'eef_capped':   None,
+                'eef_extrap':   None,
+            }
+            eef_val = eef_avg
+
+            if n_obs > 1:
+                print(f"\n  -- EEF across {n_obs} observations (FPM{module}) --")
+                for oid in obsids:
+                    raw = per_obs_raw[oid][module]
+                    ei  = raw['eef_info']
+                    print(f"    {oid}: theta={ei['theta_arcmin']:.3f}'  "
+                          f"EEF={ei['eef']:.4f}  "
+                          f"t*EEF={raw['t_eff']*ei['eef']/1e3:.3f} ks")
+                print(f"    Exposure-weighted EEF = {eef_avg:.4f}")
+        else:
+            eef_combined_info = None
+            eef_val = None
+
+        if n_obs > 1:
+            print(f"\n  -- Combined ({n_obs} obs, FPM{module}) "
+                  f"N_src={N_total}  B={B_total:.2f}  t_eff={t_total/1e3:.3f} ks --")
+
+        ul_combined = print_results_table(
+            N_total, B_total, t_total, N_bkg_total, area_ratio,
+            cfg.confidence_levels, eef=eef_val)
+
+        date_obs_first = per_obs_raw[obsids[0]][module].get('date_obs', '')
+        comb_obsid     = obsid_label if n_obs > 1 else obsids[0]
+        comb_rtype     = 'combined'   if n_obs > 1 else 'individual'
+
+        comb_rows = _build_csv_rows(
+            module, e_lo, e_hi, N_total, N_bkg_total, B_total,
+            area_ratio, t_total, ul_combined, eef_combined_info,
+            comb_obsid, date_obs=date_obs_first, result_type=comb_rtype)
+        all_csv_rows.extend(comb_rows)
+
+        # Store for the A+B combining step
+        module_combined_ab.append({
+            'module':     module,
+            'date_obs':   date_obs_first,
+            'N_src':      N_total,
+            'N_bkg_raw':  N_bkg_total,
+            'B_scaled':   B_total,
+            'area_ratio': area_ratio,
+            't_eff_s':    t_total,
+            'eef_info':   eef_combined_info,
+            'energy':     (e_lo, e_hi),
+        })
+
+    # -- A+B combined (if both FPMs processed) --------------------------------
+    if len(cfg.modules) > 1:
+        ab_rows = combine_modules(module_combined_ab, cfg, obsid_label=obsid_label)
+        all_csv_rows.extend(ab_rows)
+
+    # -- Write CSV + XLSX -----------------------------------------------------
+    os.makedirs(out_dir_main, exist_ok=True)
+    write_results_csv(all_csv_rows, out_dir_main, obsid_label)
 
     print("\nDone.")
-    return all_results
+    return per_obs_raw
+
+
+# =============================================================================
+# CONVENIENCE ENTRY POINT
+# =============================================================================
+
+def run_uplim(base_path, obsid, ra, dec, **kwargs):
+    """
+    Run the full upper-limit pipeline with minimal boilerplate.
+
+    Parameters
+    ----------
+    base_path : str   — root data directory
+    obsid     : str or list of str  — NuSTAR observation ID(s)
+                  Single obs : obsid = "80202052002"
+                  Co-adding  : obsid = ["80202052002", "80202052004"]
+    ra        : str or float  — source RA
+    dec       : str or float  — source Dec
+    **kwargs  : any Config field, e.g.
+                    src_radius_arcsec=30.0,
+                    energy_band='soft',
+                    confidence_levels=[0.9973],
+                    caldb_dir='/path/to/caldb',
+                    gui_per_obs=True,
+                    save_plots=False
+
+    Returns
+    -------
+    per_obs_raw : dict — {obsid_str: {module: raw_data_dict}}
+
+    Example
+    -------
+    >>> from nustar_uplim import run_uplim
+    >>> run_uplim(
+    ...     base_path = "/data/NuSTAR/2017gas/",
+    ...     obsid     = ["80202052002", "80202052004"],
+    ...     ra        = "20:17:11.360",
+    ...     dec       = "+58:12:08.10",
+    ...     energy_band       = 'soft',
+    ...     confidence_levels = [0.9545, 0.9973],
+    ...     caldb_dir         = "/path/to/caldb",
+    ... )
+    """
+    cfg = Config(base_path=base_path, obsid=obsid, ra=ra, dec=dec, **kwargs)
+    cfg.validate()
+    return process_observations(cfg)

@@ -84,8 +84,8 @@ class Config:
     """
 
     # -- Observation ----------------------------------------------------------
-    base_path : str   = ""
-    obsid     : str   = ""
+    base_path : str                    = ""
+    obsid     : Union[str, List[str]]  = ""   # str or list for co-added obs
 
     # -- Source position ------------------------------------------------------
     ra  : Union[str, float] = ""
@@ -129,6 +129,15 @@ class Config:
     # Use Gamma=1.7 for a harder spectrum; Gamma=0 for flat (equal weight per
     # band).  Has no effect for single-band observations (e.g. 'soft', 'hard').
 
+    # -- GUI per observation --------------------------------------------------
+    gui_per_obs : bool = False
+    # When True and use_gui=True, opens the interactive region selector for
+    # EACH observation independently.  Use when pointings differ or the source
+    # falls at the edge / off-chip in some observations.
+    # When False (default), GUI runs once per FPM on the FIRST observation;
+    # the chosen aperture and background regions are carried across subsequent
+    # observations (sky coordinates are re-projected into each obs's pixel frame).
+
     # -- Interactive GUI ------------------------------------------------------
     use_gui : bool = False
     # When True, opens an interactive matplotlib window before each FPM is
@@ -149,6 +158,13 @@ class Config:
         'hard':       (12.0, 20.0),   # CALDB nuXX2dpsfen5
         'ultra-hard': (20.0, 79.0),   # CALDB nuXX2dpsfen6
     }
+
+    @property
+    def obsids(self) -> List[str]:
+        """Return observation IDs as a list (always, even for a single obsid)."""
+        if isinstance(self.obsid, list):
+            return [str(o).strip() for o in self.obsid]
+        return [str(self.obsid).strip()]
 
     def resolve_energy_band(self):
         """Return (e_lo, e_hi) in keV."""
@@ -174,8 +190,12 @@ class Config:
         """Raise ValueError for obviously wrong settings."""
         if not self.base_path:
             raise ValueError("base_path is empty.")
-        if not self.obsid:
-            raise ValueError("obsid is empty.")
+        if isinstance(self.obsid, list):
+            if not self.obsid:
+                raise ValueError("obsid list is empty.")
+        else:
+            if not self.obsid:
+                raise ValueError("obsid is empty.")
         if not self.ra or not self.dec:
             raise ValueError("ra and dec must be set.")
         if self.bkg_mode == 'manual' and (not self.bkg_ra or not self.bkg_dec):

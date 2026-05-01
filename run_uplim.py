@@ -25,6 +25,9 @@ OBSERVATORY = 'xmm'    # 'nustar' | 'xmm' | 'swift'  ← set this first
 NUSTAR = dict(
     base_path         = "/Users/sanjanagupta/Documents/data/NuSTAR/2012ap/",
     obsid             = "80802504004",
+                        # or: obsid = ["80802504004", "80802504006"]
+                        # Co-adding sums counts + exposures and gives one
+                        # combined upper limit with individual per-obs rows too.
     caldb_dir         = "/Users/sanjanagupta/Documents/software/caldb",  # or "" to use $CALDB
 
     ra                = "05:00:13.721",     # "HH:MM:SS.ss" or decimal degrees
@@ -55,6 +58,11 @@ NUSTAR = dict(
     confidence_levels = [0.9545, 0.9973],   # ~2σ and ~3σ
 
     use_gui           = True,   # True: interactive region selector (requires display)
+    gui_per_obs       = True,  # True: independent GUI for EACH observation —
+                                #   use if pointings differ or source falls
+                                #   at the edge / off-chip in some obs.
+                                # False (default): GUI for first obs only,
+                                #   regions carried to all subsequent obs.
     save_plots        = True,
 )
 
