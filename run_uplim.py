@@ -16,7 +16,7 @@ Or import and call from a notebook:
 # CONFIG  — edit this block
 # =============================================================================
 
-OBSERVATORY = 'nustar'    # 'nustar' | 'xmm'  ← set this first
+OBSERVATORY = 'nustar'    # 'nustar' | 'xmm' | 'swift'  ← set this first
 
 # ---------------------------------------------------------------------------
 # NuSTAR settings  (used when OBSERVATORY = 'nustar')
@@ -98,6 +98,44 @@ XMM = dict(
     save_plots        = True,
 )
 
+# ---------------------------------------------------------------------------
+# Swift XRT settings  (used when OBSERVATORY = 'swift')
+# ---------------------------------------------------------------------------
+
+SWIFT = dict(
+    data_dir          = "/Users/sanjanagupta/Documents/data/Swift/raw_data/2021bmf/03000397004",
+                        # Root of the Swift observation (contains xrt/ subdir)
+    obsid             = "03000397004",
+
+    ra                = "05:00:13.721",   # "HH:MM:SS.ss" or decimal degrees
+    dec               = "-03:20:51.22",   # "±DD:MM:SS.ss" or decimal degrees
+
+    src_radius_arcsec = 20.0,   # XRT on-axis FWHM ~5–6"; typical aperture 20–30"
+    bkg_radius_arcsec = 80.0,   # outer radius of background annulus
+    bkg_inner_factor  = 1.5,    # inner radius = src_radius * this
+
+    psf_fwhm_arcsec   = 6.0,    # on-axis XRT FWHM; used for PSF-weighted exposure only
+
+    energy_band       = 'full', # 'full' (0.3–10) | 'soft' (0.3–1.5) | 'hard' (1.5–10) |
+                                # 'ultrasoft' (0.3–1.0) | or custom tuple e.g. (0.5, 7.0)
+
+    bkg_mode          = 'annulus',  # 'annulus' or 'manual'
+    bkg_ra            = "",         # only used if bkg_mode = 'manual'
+    bkg_dec           = "",
+
+    exp_stat          = 'median',   # 'median' | 'mean' | 'psf_weighted'
+
+    caldb_dir         = "",   # leave empty — $CALDB is checked automatically, then
+                              # bundled psfconst_xrt.fits is used as fallback.
+                              # or set explicitly: caldb_dir = "/path/to/caldb"
+                              # (file expected at <caldb_dir>/data/swift/xrt/cpf/psf/)
+
+    confidence_levels = [0.9545, 0.9973],   # ~2σ and ~3σ
+
+    use_gui           = True,   # True: interactive region selector (requires display)
+    save_plots        = True,
+)
+
 # =============================================================================
 
 if __name__ == "__main__":
@@ -109,7 +147,11 @@ if __name__ == "__main__":
         from xray_uplim.xmm import run_uplim
         run_uplim(**XMM)
 
+    elif OBSERVATORY == 'swift':
+        from xray_uplim.swift import run_uplim
+        run_uplim(**SWIFT)
+
     else:
         raise ValueError(
             f"Unknown OBSERVATORY '{OBSERVATORY}'. "
-            "Choose 'nustar' or 'xmm'.")
+            "Choose 'nustar', 'xmm', or 'swift'.")
