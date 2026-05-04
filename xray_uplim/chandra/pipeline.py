@@ -12,7 +12,7 @@ Follows the user's standard manual workflow:
     6.  dmstat         (mean exposure map in source and background)
     7.  Compute geometric areas (arcsec²)
     8.  aprates        (Bayesian upper limit; once per confidence level)
-    9.  Kraft/Gehrels  (cross-check; from our own statistics.py)
+    9.  Marginalized/Gehrels  (cross-check; from our own statistics.py)
     10. EEF correction (Gaussian PSF model)
     11. Print results table
     12. Save diagnostic plots
@@ -44,7 +44,7 @@ from .io         import (
     expmap_aperture_mean, run_aprates,
 )
 from ..coords    import parse_coord, sky_to_evt_pixel
-from ..statistics import net_count_rate, kraft_upper_limit, gehrels_upper_limit
+from ..statistics import net_count_rate, marginalized_upper_limit, gehrels_upper_limit
 
 
 # =============================================================================
@@ -68,11 +68,10 @@ def _compute_ul_results(N_src, B_scaled, t_eff, N_bkg_raw, area_ratio,
                                        N_bkg_raw, area_ratio)
     results = []
     for i, cl in enumerate(confidence_levels):
-        S_k  = kraft_upper_limit(N_src, B_scaled, cl)
-        S_g  = gehrels_upper_limit(N_src, B_scaled, cl)
-        CR_k_ap  = S_k / t_eff
+        CR_m_ap = marginalized_upper_limit(N_src, N_bkg_raw, area_ratio, t_eff, cl)
+        S_g     = gehrels_upper_limit(N_src, B_scaled, cl)
+        CR_m_tot = CR_m_ap / eef if (eef is not None and eef > 0) else None
         CR_g_ap  = S_g / t_eff
-        CR_k_tot = S_k / (t_eff * eef) if (eef is not None and eef > 0) else None
         CR_g_tot = S_g / (t_eff * eef) if (eef is not None and eef > 0) else None
 
         # aprates primary result
@@ -91,10 +90,9 @@ def _compute_ul_results(N_src, B_scaled, t_eff, N_bkg_raw, area_ratio,
             'aprates_err_lo'       : ap_lo,
             'aprates_ul_aperture'  : ap_up,
             'aprates_ul_total'     : ap_up_tot,
-            # Kraft (cross-check)
-            'S_kraft'              : S_k,
-            'CR_kraft_aperture'    : CR_k_ap,
-            'CR_kraft_total'       : CR_k_tot,
+            # Marginalized (cross-check)
+            'CR_marg_aperture'     : CR_m_ap,
+            'CR_marg_total'        : CR_m_tot,
             # Gehrels (additional cross-check)
             'S_gehrels'            : S_g,
             'CR_gehrels_aperture'  : CR_g_ap,
@@ -125,22 +123,22 @@ def _print_results_table(N_src, B_scaled, t_eff, N_bkg_raw, area_ratio,
 
     print(f"\n  Upper limits:")
 
-    # ---- primary table: aprates (if available) + Kraft cross-check ----------
+    # ---- primary table: aprates (if available) + marginalized cross-check ----
     if has_aprates and has_eef:
         hdr = (f"  {'CL':>8}  "
                f"{'aprates UL_ap':>14}  {'aprates UL_tot':>14}  "
-               f"{'Kraft CR_ap':>13}  {'Kraft CR_tot':>13}")
+               f"{'Marg CR_ap':>13}  {'Marg CR_tot':>13}")
     elif has_aprates:
         hdr = (f"  {'CL':>8}  "
                f"{'aprates UL_ap':>14}  "
-               f"{'Kraft CR_ap':>13}")
+               f"{'Marg CR_ap':>13}")
     elif has_eef:
         hdr = (f"  {'CL':>8}  {'Net CR':>13}  "
-               f"{'Kraft CR_ap':>13}  {'Kraft CR_tot':>13}  "
+               f"{'Marg CR_ap':>13}  {'Marg CR_tot':>13}  "
                f"{'Geh CR_ap':>13}  {'Geh CR_tot':>13}")
     else:
         hdr = (f"  {'CL':>8}  {'Net CR':>13}  "
-               f"{'Kraft CR_ap':>13}  {'Geh CR_ap':>13}")
+               f"{'Marg CR_ap':>13}  {'Geh CR_ap':>13}")
 
     divider = "  " + "-" * (len(hdr) - 2)
     print(hdr)
@@ -150,21 +148,23 @@ def _print_results_table(N_src, B_scaled, t_eff, N_bkg_raw, area_ratio,
         if has_aprates and has_eef:
             ap_up_tot = (f"{r['aprates_ul_total']:.4e}"
                          if r['aprates_ul_total'] is not None else "     N/A")
+            marg_tot = (f"{r['CR_marg_total']:.4e}"
+                        if r['CR_marg_total'] is not None else "     N/A")
             print(f"  {r['cl']:8.4f}  "
                   f"{r['aprates_ul_aperture']:14.4e}  {ap_up_tot:>14}  "
-                  f"{r['CR_kraft_aperture']:13.4e}  "
-                  f"{r['CR_kraft_total']:13.4e}")
+                  f"{r['CR_marg_aperture']:13.4e}  "
+                  f"{marg_tot:>13}")
         elif has_aprates:
             print(f"  {r['cl']:8.4f}  "
                   f"{r['aprates_ul_aperture']:14.4e}  "
-                  f"{r['CR_kraft_aperture']:13.4e}")
+                  f"{r['CR_marg_aperture']:13.4e}")
         elif has_eef:
             print(f"  {r['cl']:8.4f}  {CR_net:+13.4e}  "
-                  f"{r['CR_kraft_aperture']:13.4e}  {r['CR_kraft_total']:13.4e}  "
+                  f"{r['CR_marg_aperture']:13.4e}  {r['CR_marg_total']:13.4e}  "
                   f"{r['CR_gehrels_aperture']:13.4e}  {r['CR_gehrels_total']:13.4e}")
         else:
             print(f"  {r['cl']:8.4f}  {CR_net:+13.4e}  "
-                  f"{r['CR_kraft_aperture']:13.4e}  "
+                  f"{r['CR_marg_aperture']:13.4e}  "
                   f"{r['CR_gehrels_aperture']:13.4e}")
 
     print(divider)
@@ -175,13 +175,13 @@ def _print_results_table(N_src, B_scaled, t_eff, N_bkg_raw, area_ratio,
             fwhm_str = (f"{psf_fwhm_arcsec:.3f}" if psf_fwhm_arcsec is not None
                         else "?")
             print(f"  EEF used: {eef:.4f}  (Gaussian FWHM = {fwhm_str} arcsec)")
-        print("  Kraft CR_ap is printed as a cross-check.")
+        print("  Marg CR_ap is printed as a cross-check.")
     else:
-        print("  CR_ap  = aperture count-rate upper limit = S_ul / t_eff.")
+        print("  Marg CR_ap  = marginalized aperture count-rate upper limit (cts/s).")
         if has_eef:
-            print(f"  CR_tot = EEF-corrected total source rate = S_ul / (t_eff × EEF).")
+            print(f"  Marg CR_tot = EEF-corrected total source rate = CR_ap / EEF.")
             print(f"  EEF used: {eef:.4f}")
-        print("  Note: aprates was not run — only Kraft/Gehrels results.")
+        print("  Note: aprates was not run — only marginalized/Gehrels results.")
 
     return results
 
@@ -219,11 +219,10 @@ def _build_csv_rows(e_lo, e_hi, N_src, N_bkg_raw, B_scaled, area_ratio,
                                       if r['aprates_ul_aperture'] is not None else ''),
             'aprates_ul_total'     : (f"{r['aprates_ul_total']:.6e}"
                                       if r['aprates_ul_total'] is not None else ''),
-            # Kraft cross-check
-            'S_kraft'              : f"{r['S_kraft']:.4f}",
-            'CR_kraft_aperture'    : f"{r['CR_kraft_aperture']:.6e}",
-            'CR_kraft_total'       : (f"{r['CR_kraft_total']:.6e}"
-                                      if r['CR_kraft_total'] is not None else ''),
+            # Marginalized cross-check
+            'CR_marg_aperture'     : f"{r['CR_marg_aperture']:.6e}",
+            'CR_marg_total'        : (f"{r['CR_marg_total']:.6e}"
+                                      if r['CR_marg_total'] is not None else ''),
             'S_gehrels'            : f"{r['S_gehrels']:.4f}",
             'CR_gehrels_aperture'  : f"{r['CR_gehrels_aperture']:.6e}",
             'CR_gehrels_total'     : (f"{r['CR_gehrels_total']:.6e}"
@@ -254,7 +253,7 @@ def write_results_csv(rows, out_dir, obsid_label):
         'confidence_level',
         'CR_net', 'CR_sigma',
         'aprates_ul_aperture', 'aprates_ul_total',
-        'S_kraft',   'CR_kraft_aperture',   'CR_kraft_total',
+        'CR_marg_aperture', 'CR_marg_total',
         'S_gehrels', 'CR_gehrels_aperture', 'CR_gehrels_total',
     ]
 
@@ -926,9 +925,9 @@ def run_uplim(base_path, obsid, ra, dec, **kwargs):
             print(f"               {oid}")
     print(f"PSF FWHM     :  {cfg.psf_fwhm_arcsec:.2f} arcsec (Gaussian EEF model)")
     if cfg.use_aprates:
-        print("Statistics   :  CIAO aprates  (Kraft as cross-check)")
+        print("Statistics   :  CIAO aprates  (marginalized as cross-check)")
     else:
-        print("Statistics   :  Kraft/Gehrels  (no aprates)")
+        print("Statistics   :  marginalized/Gehrels  (no aprates)")
     print()
 
     result = process_observation(cfg)
@@ -957,7 +956,7 @@ def run_uplim(base_path, obsid, ra, dec, **kwargs):
             print(f"  aprates UL (3σ EEF-corr) : {ul_row['aprates_ul_total']:.4e} cts/s")
         print(f"  → Use aperture UL in PIMMS (Chandra ACIS, same band)")
     else:
-        print(f"\n  Kraft UL (3σ aperture)   : {ul_row['CR_kraft_aperture']:.4e} cts/s")
+        print(f"\n  Marg UL (3σ aperture)    : {ul_row['CR_marg_aperture']:.4e} cts/s")
 
     print()
     return result

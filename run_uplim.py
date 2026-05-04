@@ -16,7 +16,7 @@ Or import and call from a notebook:
 # CONFIG  — edit this block
 # =============================================================================
 
-OBSERVATORY = 'chandra'    # 'nustar' | 'xmm' | 'swift' | 'chandra'  ← set this first
+OBSERVATORY = 'nustar'    # 'nustar' | 'xmm' | 'swift' | 'chandra'  ← set this first
 
 # ---------------------------------------------------------------------------
 # NuSTAR settings  (used when OBSERVATORY = 'nustar')
@@ -55,7 +55,7 @@ NUSTAR = dict(
     psf_gamma         = 2.0,        # photon index for PSF spectral weighting
                                     # 2.0 = soft source prior; 1.7 = harder; 0.0 = flat
 
-    confidence_levels = [0.9545, 0.9973],   # ~2σ and ~3σ
+    confidence_levels = [0.68, 0.9545, 0.9973],   # ~1σ, ~2σ and ~3σ
 
     use_gui           = True,   # True: interactive region selector (requires display)
     gui_per_obs       = True,  # True: independent GUI for EACH observation —
@@ -96,7 +96,7 @@ XMM = dict(
 
     exp_stat          = 'median',
 
-    confidence_levels = [0.9545, 0.9973],
+    confidence_levels = [0.68, 0.9545, 0.9973],
 
     psf_dir           = "",     # leave empty — $SAS_CCFPATH is checked automatically.
                                 # if SAS is initialised in your shell, no change needed here.
@@ -153,7 +153,7 @@ SWIFT = dict(
                               # Set to an absolute path only if you have a newer
                               # or custom PSF coefficient file to use instead.
 
-    confidence_levels = [0.9545, 0.9973],   # ~2σ and ~3σ
+    confidence_levels = [0.68, 0.9545, 0.9973],   # ~1σ, ~2σ and ~3σ
 
     use_gui           = True,   # True: interactive region selector (requires display)
     gui_per_obs       = True,  # True: independent GUI for EACH observation —
@@ -199,7 +199,7 @@ CHANDRA = dict(
     bkg_ra            = "",         # only used if bkg_mode = 'manual'
     bkg_dec           = "",
 
-    confidence_levels = [0.68, 0.9545, 0.9973],   # ~2σ and ~3σ
+    confidence_levels = [0.68, 0.9545, 0.9973],   # ~1σ, ~2σ and ~3σ
 
     ciao_prefix       = "/Applications/ciao-4.18",     # Leave empty — CIAO conda env is auto-detected.
                                 # Set explicitly only if auto-detection fails, e.g.

@@ -18,7 +18,7 @@ Quickstart — NuSTAR
 
 from .nustar.pipeline  import run_uplim, process_module, combine_modules
 from .nustar.config    import Config
-from .statistics       import kraft_upper_limit, gehrels_upper_limit, net_count_rate
+from .statistics       import marginalized_upper_limit, gehrels_upper_limit, net_count_rate
 from .eef              import compute_eef
 
 __version__ = "2.0.0"
@@ -28,7 +28,7 @@ __all__ = [
     "process_module",
     "combine_modules",
     "Config",
-    "kraft_upper_limit",
+    "marginalized_upper_limit",
     "gehrels_upper_limit",
     "net_count_rate",
     "compute_eef",

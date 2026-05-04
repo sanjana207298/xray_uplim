@@ -9,24 +9,23 @@ net_count_rate()
     Background-subtracted point estimate.  Not an upper limit.
     Useful as a sanity check and for comparison with the proper ULs.
 
-kraft_upper_limit()
-    Kraft, Burrows & Nousek 1991, ApJ 374, 344.
-    Bayesian posterior with uniform prior on S >= 0.  Solved exactly via
-    the regularised incomplete Gamma function — numerically stable for any
-    observed count total, including N ~ 500+ where quad-based integration
-    fails silently due to floating-point overflow.
-    This is the standard method for X-ray non-detections.
+marginalized_upper_limit()
+    Bayesian upper limit marginalising over the unknown background rate B.
+    Treats n~Poisson(S·t + α·B·t) and m~Poisson(B·t) and integrates over
+    B analytically (weighted mixture of Gamma distributions).
+    Supersedes kraft_upper_limit(), which fixes B at its point estimate.
+    As m → ∞ the two methods converge.  Used across all telescopes.
 
 gehrels_upper_limit()
     Gehrels 1986, ApJ 303, 336.
     Closed-form Poisson approximation.  Slightly overestimates at low N.
-    Printed as a cross-check alongside Kraft.
+    Printed as a cross-check alongside the marginalized UL.
 """
 
 import numpy as np
 from scipy.optimize import brentq
 from scipy.stats import norm as sp_norm
-from scipy.special import gammaincc
+from scipy.special import gammaincc, gammaln, gammainc
 
 
 def net_count_rate(N_src, B_scaled, t_eff, N_bkg_raw, area_ratio):
@@ -130,6 +129,99 @@ def kraft_upper_limit(N_obs, B_scaled, confidence):
         S_upper = s_hi   # fallback; should not occur with the bracket above
 
     return S_upper
+
+
+def marginalized_upper_limit(n_obs, n_bkg_raw, area_ratio, t_eff, confidence):
+    """
+    Bayesian upper limit that marginalises over the unknown background rate.
+
+    This is what CIAO aprates implements for Chandra, generalised to work
+    for any telescope.  It supersedes kraft_upper_limit() by treating the
+    background as an unknown Poisson parameter rather than a fixed number.
+
+    Statistical model
+    -----------------
+    Source aperture  :  n ~ Poisson(S·t  +  α·B·t)
+    Background aperture :  m ~ Poisson(B·t)
+
+    where S = source rate (cts/s), B = background rate (cts/s),
+    α = A_src / A_bkg (area ratio), t = t_eff (equal for both apertures
+    in the same observation; for co-added obs use the summed exposure).
+
+    Flat (improper) priors on both S ≥ 0 and B ≥ 0.
+
+    The marginal posterior on S (analytically integrating over all B > 0)
+    is a weighted mixture of Gamma distributions:
+
+        p(S | n, m) ∝ e^{-S·t}  Σ_{j=0}^{n}  w_j · (S·t)^{n-j}
+
+    where:
+        w_j = C(n,j) · α^j · Γ(m+j+1) / (1+α)^{m+j+1}
+
+    Kraft et al. (1991) corresponds to keeping only the j=0 term after
+    replacing B with its point estimate α·m/t (i.e. treating B as known).
+
+    As m → ∞ (background perfectly measured) the two methods converge.
+
+    Parameters
+    ----------
+    n_obs      : int    — counts in source aperture
+    n_bkg_raw  : int    — raw counts in background aperture (not scaled)
+    area_ratio : float  — A_src / A_bkg
+    t_eff      : float  — effective exposure time in seconds
+    confidence : float  — one-sided CL (e.g. 0.9973 for 3σ)
+
+    Returns
+    -------
+    S_upper : float  — upper limit on source count RATE in cts/s
+    """
+    n     = int(n_obs)
+    m     = int(n_bkg_raw)
+    alpha = float(area_ratio)
+    t     = float(t_eff)
+
+    j = np.arange(n + 1, dtype=float)
+
+    # ---- log-weights (computed in log-space to handle large n, m) -----------
+    log_binom  = gammaln(n + 1) - gammaln(j + 1) - gammaln(n - j + 1)
+    log_alphaj = np.where(j == 0,
+                          0.0,
+                          j * np.log(alpha) if alpha > 0 else -np.inf)
+    log_w = (log_binom
+             + log_alphaj
+             + gammaln(m + j + 1)
+             - (m + j + 1) * np.log(1.0 + alpha))
+
+    # ---- normalisation terms: w_j × Γ(n-j+1) -------------------------------
+    log_nt    = log_w + gammaln(n - j + 1)
+    log_shift = log_nt.max()                   # subtract max for numerical safety
+    nt        = np.exp(log_nt - log_shift)     # relative normalisation terms
+    norm      = nt.sum()
+
+    # ---- CDF: P(S·t ≤ L) = Σ_j nt_j · gammainc(n-j+1, L) / norm -----------
+    #  gammainc(a, x) = regularised lower incomplete gamma = P(a, x)
+    a_arr = (n - j + 1).astype(int)            # a values (all ≥ 1)
+
+    def cdf(L):
+        if L <= 0.0:
+            return 0.0
+        vals = np.array([gammainc(int(a), L) for a in a_arr])
+        return float(np.dot(nt, vals) / norm)
+
+    if cdf(1e-300) >= confidence:
+        return 0.0
+
+    # ---- bracket: expand L_hi until cdf(L_hi) ≥ confidence -----------------
+    L_hi = max(n, 1.0) + 10.0 * np.sqrt(max(n, 1.0)) + 50.0
+    for _ in range(60):
+        if cdf(L_hi) >= confidence:
+            break
+        L_hi *= 2.0
+
+    L_ul = brentq(lambda L: cdf(L) - confidence, 0.0, L_hi,
+                  xtol=1e-6, maxiter=500)
+
+    return L_ul / t          # convert counts → cts/s
 
 
 def gehrels_upper_limit(N_obs, B_scaled, confidence):

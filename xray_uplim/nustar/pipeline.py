@@ -22,7 +22,7 @@ from .io          import locate_files, load_events, load_expmap
 from ..coords     import parse_coord, sky_to_evt_pixel, sky_to_img_pixel
 from ..eef        import compute_eef
 from ..exposure   import compute_exposure_stats
-from ..statistics import net_count_rate, kraft_upper_limit, gehrels_upper_limit
+from ..statistics import net_count_rate, marginalized_upper_limit, gehrels_upper_limit
 from ..plots      import radial_profile, exposure_histogram, region_image
 
 
@@ -39,33 +39,31 @@ def _compute_ul_results(N_src, B_scaled, t_eff, N_bkg_raw, area_ratio,
     -------
     list of dicts, one per CL, with keys:
         cl, CR_net, CR_sigma,
-        S_kraft,   CR_kraft_aperture,   CR_kraft_total   (None if no EEF),
+        CR_marg_aperture,   CR_marg_total   (None if no EEF),
         S_gehrels, CR_gehrels_aperture, CR_gehrels_total (None if no EEF)
     """
     CR_net, CR_sigma = net_count_rate(N_src, B_scaled, t_eff,
                                       N_bkg_raw, area_ratio)
     results = []
     for cl in confidence_levels:
-        S_k     = kraft_upper_limit(N_src, B_scaled, cl)
+        CR_m_ap = marginalized_upper_limit(N_src, N_bkg_raw, area_ratio, t_eff, cl)
         S_g     = gehrels_upper_limit(N_src, B_scaled, cl)
-        CR_k_ap = S_k / t_eff
         CR_g_ap = S_g / t_eff
         if eef is not None and eef > 0:
-            CR_k_tot = S_k / (t_eff * eef)
+            CR_m_tot = CR_m_ap / eef
             CR_g_tot = S_g / (t_eff * eef)
         else:
-            CR_k_tot = None
+            CR_m_tot = None
             CR_g_tot = None
         results.append({
-            'cl':                  cl,
-            'CR_net':              CR_net,
-            'CR_sigma':            CR_sigma,
-            'S_kraft':             S_k,
-            'CR_kraft_aperture':   CR_k_ap,
-            'CR_kraft_total':      CR_k_tot,
-            'S_gehrels':           S_g,
-            'CR_gehrels_aperture': CR_g_ap,
-            'CR_gehrels_total':    CR_g_tot,
+            'cl':                     cl,
+            'CR_net':                 CR_net,
+            'CR_sigma':               CR_sigma,
+            'CR_marg_aperture':       CR_m_ap,
+            'CR_marg_total':          CR_m_tot,
+            'S_gehrels':              S_g,
+            'CR_gehrels_aperture':    CR_g_ap,
+            'CR_gehrels_total':       CR_g_tot,
         })
     return results
 
@@ -104,13 +102,13 @@ def print_results_table(N_src, B_scaled, t_eff, N_bkg_raw, area_ratio,
     if eef is not None:
         header = (
             f"  {'CL':>8}  {'Net CR':>13}  "
-            f"{'Kraft S_ul':>10}  {'Kraft CR_ap':>13}  {'Kraft CR_tot':>13}  "
+            f"{'Marg CR_ap':>13}  {'Marg CR_tot':>13}  "
             f"{'Geh S_ul':>10}  {'Geh CR_ap':>13}  {'Geh CR_tot':>13}"
         )
     else:
         header = (
             f"  {'CL':>8}  {'Net CR':>13}  "
-            f"{'Kraft S_ul':>10}  {'Kraft CR_ap':>13}  "
+            f"{'Marg CR_ap':>13}  "
             f"{'Geh S_ul':>10}  {'Geh CR_ap':>13}"
         )
     divider = "  " + "-" * (len(header) - 2)
@@ -121,25 +119,25 @@ def print_results_table(N_src, B_scaled, t_eff, N_bkg_raw, area_ratio,
         if eef is not None:
             print(
                 f"  {r['cl']:8.4f}  {r['CR_net']:+13.4e}  "
-                f"{r['S_kraft']:10.3f}  {r['CR_kraft_aperture']:13.4e}  "
-                f"{r['CR_kraft_total']:13.4e}  "
+                f"{r['CR_marg_aperture']:13.4e}  "
+                f"{r['CR_marg_total']:13.4e}  "
                 f"{r['S_gehrels']:10.3f}  {r['CR_gehrels_aperture']:13.4e}  "
                 f"{r['CR_gehrels_total']:13.4e}"
             )
         else:
             print(
                 f"  {r['cl']:8.4f}  {r['CR_net']:+13.4e}  "
-                f"{r['S_kraft']:10.3f}  {r['CR_kraft_aperture']:13.4e}  "
+                f"{r['CR_marg_aperture']:13.4e}  "
                 f"{r['S_gehrels']:10.3f}  {r['CR_gehrels_aperture']:13.4e}"
             )
 
     print(divider)
     if eef is not None:
-        print(f"  CR_ap  = aperture count-rate upper limit = S_ul / t_eff.")
-        print(f"  CR_tot = EEF-corrected total source rate = S_ul / (t_eff * EEF).")
+        print(f"  Marg CR_ap  = marginalized aperture count-rate upper limit (cts/s).")
+        print(f"  Marg CR_tot = EEF-corrected total source rate = CR_ap / EEF.")
         print(f"  EEF used: {eef:.4f}")
     else:
-        print(f"  CR_ap is the aperture count-rate upper limit.")
+        print(f"  Marg CR_ap is the marginalized aperture count-rate upper limit.")
         print(f"  EEF correction skipped (set caldb_dir to enable).")
 
     return results
@@ -175,7 +173,7 @@ def write_results_csv(rows, out_dir, obsid_label):
         'eef_capped', 'eef_extrap',
         'confidence_level',
         'CR_net', 'CR_sigma',
-        'S_kraft', 'CR_kraft_aperture', 'CR_kraft_total',
+        'CR_marg_aperture', 'CR_marg_total',
         'S_gehrels', 'CR_gehrels_aperture', 'CR_gehrels_total',
     ]
 
@@ -223,11 +221,10 @@ def _build_csv_rows(module, e_lo, e_hi, N_src, N_bkg_raw, B_scaled,
             'area_ratio':         f"{area_ratio:.6f}",
             't_eff_s':            f"{t_eff:.2f}",
             'confidence_level':   r['cl'],
-            'CR_net':             f"{r['CR_net']:.6e}",
-            'CR_sigma':           f"{r['CR_sigma']:.6e}",
-            'S_kraft':            f"{r['S_kraft']:.4f}",
-            'CR_kraft_aperture':  f"{r['CR_kraft_aperture']:.6e}",
-            'S_gehrels':          f"{r['S_gehrels']:.4f}",
+            'CR_net':              f"{r['CR_net']:.6e}",
+            'CR_sigma':            f"{r['CR_sigma']:.6e}",
+            'CR_marg_aperture':    f"{r['CR_marg_aperture']:.6e}",
+            'S_gehrels':           f"{r['S_gehrels']:.4f}",
             'CR_gehrels_aperture': f"{r['CR_gehrels_aperture']:.6e}",
         }
         if eef_info is not None:
@@ -242,8 +239,8 @@ def _build_csv_rows(module, e_lo, e_hi, N_src, N_bkg_raw, B_scaled,
                                        if eef_info['eef_capped'] is not None else '')
             row['eef_extrap']       = (f"{eef_info['eef_extrap']:.6f}"
                                        if eef_info['eef_extrap'] is not None else '')
-            if r['CR_kraft_total'] is not None:
-                row['CR_kraft_total']   = f"{r['CR_kraft_total']:.6e}"
+            if r['CR_marg_total'] is not None:
+                row['CR_marg_total']    = f"{r['CR_marg_total']:.6e}"
                 row['CR_gehrels_total'] = f"{r['CR_gehrels_total']:.6e}"
         rows.append(row)
     return rows
@@ -785,10 +782,10 @@ def process_observations(cfg):
                 print(f"    N_src={raw['N_src']}  B={raw['B_scaled']:.2f}  "
                       f"t_eff={raw['t_eff']/1e3:.3f} ks")
                 for r in ul_ind:
-                    tot_str = (f"  Kraft CR_tot={r['CR_kraft_total']:.3e}"
-                               if r['CR_kraft_total'] is not None else '')
+                    tot_str = (f"  Marg CR_tot={r['CR_marg_total']:.3e}"
+                               if r['CR_marg_total'] is not None else '')
                     print(f"    CL={r['cl']:.4f}  "
-                          f"Kraft CR_ap={r['CR_kraft_aperture']:.3e}{tot_str}")
+                          f"Marg CR_ap={r['CR_marg_aperture']:.3e}{tot_str}")
 
                 ind_rows = _build_csv_rows(
                     module, e_lo, e_hi,
