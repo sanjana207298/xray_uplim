@@ -35,7 +35,9 @@ Given a source position and an X-ray observation in which the source was not det
 ### Python
 - Python ≥ 3.8
 
-### Python packages (installed automatically)
+### Python packages
+
+These are installed automatically when you run `pip install .` from the cloned repository (see [Installation](#installation) below).
 
 | Package | Version | Purpose |
 |---------|---------|---------|
@@ -45,7 +47,7 @@ Given a source position and an X-ray observation in which the source was not det
 | matplotlib | ≥ 3.4 | Plots and interactive region selector |
 | openpyxl | ≥ 3.0 | Excel output |
 | pyyaml | ≥ 6.0 | YAML config files (CLI mode) |
-| PySide6 | ≥ 6.4 | Desktop GUI *(optional — install separately)* |
+| PySide6 | ≥ 6.4 | Desktop GUI *(optional — use `pip install ".[gui]"`)* |
 
 ### External astronomy software (telescope-specific)
 
@@ -66,6 +68,8 @@ Given a source position and an X-ray observation in which the source was not det
 git clone https://github.com/yourusername/nustar_uplim.git
 cd nustar_uplim
 ```
+
+> **Note**: `xray_uplim` is not on PyPI. Installation is from the cloned repository using `pip install .`, which reads `setup.py` and installs all Python dependencies automatically into your active environment.
 
 ### 2. Create a dedicated environment (recommended)
 
@@ -309,17 +313,6 @@ All output is written to `ul_products/` inside the observation directory:
 | `expmap_hist_{label}.png` | Exposure-map pixel distribution in aperture |
 | `regions_{label}_{band}keV.png` | Sky image with source and background apertures (300 dpi) |
 | `regions_{label}_{band}keV.pdf` | Vector version of sky image (for papers) |
-
----
-
-## setup.py vs requirements.txt
-
-| File | Purpose | When used |
-|------|---------|-----------|
-| `setup.py` | Defines the installable package: dependencies, entry points, metadata | `pip install .` — always |
-| `requirements.txt` | Flat dependency list for reproducible environments | `pip install -r requirements.txt` — development / CI |
-
-`setup.py` is the authoritative source. `requirements.txt` mirrors it for convenience.
 
 ---
 
