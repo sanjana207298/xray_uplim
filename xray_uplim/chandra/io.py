@@ -395,7 +395,7 @@ def run_fluximage(evt2: str, fluximage_dir: str,
     # fluximage's second arg is an outROOT prefix, not a directory.
     # Appending '/' tells it to treat the path as a directory and write
     # files inside it as  {dir}/{band}_thresh.expmap  (no extra prefix).
-    outroot  = fluximage_dir.rstrip('/') + '/'
+    outroot  = fluximage_dir.rstrip('/\\') + '/'   # CIAO expects forward-slash root
     print(f"  Running fluximage  (band = {band_str} keV)…")
     _run([
         'fluximage',

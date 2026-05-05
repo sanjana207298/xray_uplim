@@ -814,8 +814,14 @@ class MainWindow(QMainWindow):
         right_lay.setContentsMargins(0, 6, 6, 6)
 
         self._tabs = QTabWidget()
-        mono = (QFont('Menlo', 11) if sys.platform == 'darwin'
-                else QFont('Consolas', 10))
+        if sys.platform == 'darwin':
+            mono = QFont('Menlo', 11)
+        elif sys.platform == 'win32':
+            mono = QFont('Consolas', 10)
+        else:                              # Linux / FreeBSD
+            mono = QFont('Liberation Mono', 10)
+            if not mono.exactMatch():
+                mono = QFont('DejaVu Sans Mono', 10)
 
         # Log tab
         self._log = QTextEdit()
