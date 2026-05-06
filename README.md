@@ -53,7 +53,7 @@ These are installed automatically when you run `pip install .` from the cloned r
 
 | Telescope | Software | Required for |
 |-----------|----------|-------------|
-| NuSTAR | [HEASoft](https://heasarc.gsfc.nasa.gov/docs/software/heasoft/) + NuSTAR CALDB | Exposure map creation, EEF via ARF |
+| NuSTAR | [HEASoft](https://heasarc.gsfc.nasa.gov/docs/software/heasoft/) + NuSTAR CALDB | Exposure map creation, EEF via 2D PSF images (CALDB `bcf/psf/`) |
 | Swift | None required | Bundled PSF coefficient file included |
 | XMM | [SAS](https://www.cosmos.esa.int/web/xmm-newton/sas) ≥ 20 | Event file processing, CCF/PSF calibration |
 | Chandra | [CIAO](https://cxc.cfa.harvard.edu/ciao/) ≥ 4.15 | `chandra_repro`, `aprates`, `fluximage` |
@@ -147,9 +147,8 @@ $CALDB/
     └── nustar/
         └── fpm/
             └── bcf/
-                ├── arf/        ← Ancillary Response Files (EEF + effective area vs energy)
-                ├── psf/        ← PSF calibration (King profile parameters)
-                └── vignet/     ← Vignetting correction
+                └── psf/        ← 2D PSF image FITS files (one per energy sub-band,
+                                   tabulated at discrete off-axis angles 0–8.5')
 ```
 
 The GUI has a **CALDB directory** field — leave it empty if `$CALDB` is already set in your shell.
@@ -312,6 +311,15 @@ area_ratio = Σ exp_map[source pixels] / Σ exp_map[background pixels]
 ```
 
 This accounts for vignetting gradients: if the background annulus extends to larger off-axis angles, its effective exposure per pixel is lower than at the source position. The purely geometric ratio (π r_src² / π r_bkg²) ignores this and slightly under-corrects for background, leading to a conservatively high upper limit. The exposure-weighted ratio corrects this automatically. If the exposure map cannot cover the background region, the code falls back to the geometric ratio with a warning.
+
+When combining detectors with different area ratios (e.g. NuSTAR FPMA + FPMB), an effective ratio is computed that is exactly consistent with the summed scaled background:
+
+```
+alpha_eff = B_total / N_bkg_total
+          = (alpha_A × N_bkg_A + alpha_B × N_bkg_B) / (N_bkg_A + N_bkg_B)
+```
+
+This ensures the background prediction inside the Bayesian integral is self-consistent across modules.
 
 ### Upper limit on total source rate — EEF correction
 
