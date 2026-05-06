@@ -153,7 +153,7 @@ class XMMConfig:
 
     # Named energy bands (e_lo, e_hi) in keV
     ENERGY_BANDS = {
-        'full'      : (0.5, 10.0),
+        'full'      : (0.2, 12.0),
         'soft'      : (0.5,  2.0),
         'hard'      : (2.0, 10.0),
         'medium'    : (1.0,  2.0),

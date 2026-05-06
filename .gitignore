@@ -26,6 +26,9 @@ xray_uplim/data/xmm/
 # Bundled Swift XRT PSF ships with the repo, no install needed.
 !xray_uplim/data/swift/psf/psfconst_xrt.fits
 
+# One-off scripts (not part of the package)
+make_eef_validation_plot.py
+
 # Outputs
 results/
 *.png

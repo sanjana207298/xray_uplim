@@ -826,17 +826,22 @@ def process_observations(cfg: XMMConfig):
         print(f"\n{'='*70}")
         print("  SUMMARY")
         print(f"{'='*70}")
+        has_eef = any(cr['eef_str'] != 'N/A' for cr in combined_results.values())
+        cr_label = 'Marg CR_tot (3σ)' if has_eef else 'Marg CR_ap (3σ)'
         print(f"  {'Instrument':<8}  {'N_src':>6}  {'B_scaled':>9}  "
               f"{'t_eff (ks)':>11}  {'EEF':>6}  "
-              f"{'Marg CR_ap (3σ)':>18}")
+              f"{cr_label:>18}")
         print("  " + "-" * 68)
         for instrument, cr in combined_results.items():
             ul_row = next((u for u in cr['ul'] if u['cl'] >= 0.997), cr['ul'][-1])
+            cr_val = (ul_row['CR_marg_total']
+                      if has_eef and ul_row['CR_marg_total'] is not None
+                      else ul_row['CR_marg_aperture'])
             print(f"  {instrument:<8}  {cr['N_src']:>6}  "
                   f"{cr['B_scaled']:>9.2f}  "
                   f"{cr['t_eff_s']/1e3:>11.3f}  "
                   f"{cr['eef_str']:>6}  "
-                  f"{ul_row['CR_marg_aperture']:>18.4e}")
+                  f"{cr_val:>18.4e}")
         print()
 
     # -- Write CSV + XLSX -----------------------------------------------------

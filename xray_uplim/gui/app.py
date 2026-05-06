@@ -43,7 +43,7 @@ NUSTAR_BANDS = OrderedDict([
 NUSTAR_ELIM = (3.0, 79.0)
 
 XMM_BANDS = OrderedDict([
-    ('full',      'full  ·  0.5–10 keV'),
+    ('full',      'full  ·  0.2–12 keV'),
     ('soft',      'soft  ·  0.5–2 keV'),
     ('hard',      'hard  ·  2–10 keV'),
     ('medium',    'medium  ·  1–2 keV'),
