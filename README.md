@@ -263,7 +263,7 @@ base_path/
     └── hk/
         └── nu{obsid}A_mast.fits    ← housekeeping (exposure metadata)
 ```
-Output → `base_path/{obsid}/ul_products/`
+Output → directory specified by `output_dir` in the config (or GUI output field)
 
 ### Swift XRT
 ```
@@ -275,7 +275,7 @@ data_dir/
         └── expmap/
             └── sw{obsid}xpc_ex.img        ← exposure map
 ```
-Output → `data_dir/{obsid}/ul_products/`
+Output → directory specified by `output_dir` in the config (or GUI output field)
 
 ### XMM-Newton EPIC
 ```
@@ -285,7 +285,7 @@ data_dir/                 ← ODF working directory (after running emproc / eppr
 ├── *PNEVLI*.FTZ          ← pn event list
 └── *EXPMAP*.FTZ          ← exposure maps (from eexpmap)
 ```
-Output → `data_dir/ul_products/`
+Output → directory specified by `output_dir` in the config (or GUI output field)
 
 ### Chandra ACIS
 ```
@@ -296,7 +296,7 @@ base_path/
     └── repro/                               ← created automatically by chandra_repro
         └── acisf{obsid}_repro_evt2.fits
 ```
-Output → `base_path/{obsid}/ul_products/`
+Output → directory specified by `output_dir` in the config (or GUI output field)
 
 ---
 
@@ -347,7 +347,7 @@ is solved numerically, where `alpha` is the area/exposure ratio. For Chandra, `x
 
 ## Output files
 
-All output is written to `ul_products/` inside the observation directory:
+All output is written to the directory specified by `output_dir` in the configuration (or the output field in the GUI):
 
 | File | Description |
 |------|-------------|

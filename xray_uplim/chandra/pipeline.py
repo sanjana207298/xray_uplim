@@ -824,8 +824,8 @@ def _save_plots(obs_raw, cfg, out_dir, e_lo, e_hi):
 
         fname = os.path.join(
             out_dir,
-            f"chandra_regions_{obs_raw['obsid_str']}_{e_lo:.1f}-{e_hi:.1f}keV.png")
-        fig.savefig(fname, dpi=300, bbox_inches='tight')
+            f"chandra_regions_{obs_raw['obsid_str']}_{e_lo:.1f}-{e_hi:.1f}keV.pdf")
+        fig.savefig(fname, bbox_inches='tight')
         plt.close(fig)
         print(f"  Region image saved: {os.path.basename(fname)}")
 

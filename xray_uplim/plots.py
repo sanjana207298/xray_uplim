@@ -95,8 +95,8 @@ def radial_profile(evt_x, evt_y, cx_evt, cy_evt, pscale_evt,
     fig.tight_layout()
 
     fname = os.path.join(
-        out_dir, f"radial_{label}_{e_lo:.1f}-{e_hi:.1f}keV.png")
-    fig.savefig(fname, dpi=300, bbox_inches='tight')
+        out_dir, f"radial_{label}_{e_lo:.1f}-{e_hi:.1f}keV.pdf")
+    fig.savefig(fname, bbox_inches='tight')
     plt.close(fig)
     print(f"  Radial profile plot  -> {fname}")
 
@@ -141,8 +141,8 @@ def exposure_histogram(meta, exp_stats, label, cfg, out_dir):
     ax.legend()
     fig.tight_layout()
 
-    fname = os.path.join(out_dir, f"expmap_hist_{label}.png")
-    fig.savefig(fname, dpi=300, bbox_inches='tight')
+    fname = os.path.join(out_dir, f"expmap_hist_{label}.pdf")
+    fig.savefig(fname, bbox_inches='tight')
     plt.close(fig)
     print(f"  Exposure histogram   -> {fname}")
 
@@ -306,12 +306,8 @@ def region_image(evt_x, evt_y, cx_evt, cy_evt, pscale_evt,
 
     stem = f"regions_{label}_{e_lo:.1f}-{e_hi:.1f}keV"
 
-    png_path = os.path.join(out_dir, f"{stem}.png")
-    fig.savefig(png_path, dpi=300, bbox_inches='tight')
-    print(f"  Region image (png)   -> {png_path}")
-
     pdf_path = os.path.join(out_dir, f"{stem}.pdf")
-    fig.savefig(pdf_path, bbox_inches='tight')       # vector — no dpi
-    print(f"  Region image (pdf)   -> {pdf_path}")
+    fig.savefig(pdf_path, bbox_inches='tight')
+    print(f"  Region image         -> {pdf_path}")
 
     plt.close(fig)
