@@ -15,8 +15,14 @@ import sys
 import tempfile
 from collections import OrderedDict
 
-from PySide6.QtCore    import Qt, QProcess
+from PySide6.QtCore    import Qt, QProcess, QSize
 from PySide6.QtGui     import QFont, QColor, QTextCursor, QPixmap
+
+try:
+    from PySide6.QtPdf import QPdfDocument
+    _PDF_SUPPORT = True
+except ImportError:
+    _PDF_SUPPORT = False
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QFormLayout, QGroupBox, QLabel, QLineEdit, QDoubleSpinBox,
@@ -943,7 +949,7 @@ class MainWindow(QMainWindow):
     # ---- Results gallery ----------------------------------------------------
 
     def _load_results(self):
-        """Show PNG plots from ul_products/ in the Results tab."""
+        """Show PDF plots from ul_products/ in the Results tab."""
         # Clear previous content
         while self._results_layout.count():
             item = self._results_layout.takeAt(0)
@@ -966,39 +972,61 @@ class MainWindow(QMainWindow):
             self._tabs.setCurrentIndex(1)
             return
 
-        pngs = sorted(
+        pdfs = sorted(
             p for d in candidates
-            for p in glob.glob(os.path.join(d, '*.png'))
+            for p in glob.glob(os.path.join(d, '*.pdf'))
         )
 
-        if not pngs:
-            lbl = QLabel('Pipeline ran but no plot images found in ul_products/.')
+        if not pdfs:
+            lbl = QLabel('Pipeline ran but no plot files found in ul_products/.')
             lbl.setStyleSheet('color:#aaa; padding:20px;')
             self._results_layout.addWidget(lbl)
             self._results_layout.addStretch()
             self._tabs.setCurrentIndex(1)
             return
 
-        # Display each PNG
+        if not _PDF_SUPPORT:
+            lbl = QLabel(
+                f'Found {len(pdfs)} plot(s) in ul_products/ but PDF rendering '
+                f'requires PySide6.QtPdf (Qt ≥ 6.4).\n'
+                f'Open the files directly from:\n  {candidates[0]}')
+            lbl.setStyleSheet('color:#aaa; padding:20px;')
+            lbl.setWordWrap(True)
+            self._results_layout.addWidget(lbl)
+            self._results_layout.addStretch()
+            self._tabs.setCurrentIndex(1)
+            return
+
+        # Display each PDF (first page only — all diagnostic plots are single-page)
         right_width = self.width() - 460   # approximate available width
         img_width   = max(500, right_width - 40)
 
-        for png_path in pngs:
+        for pdf_path in pdfs:
             # Filename label
             name_lbl = QLabel(f'<b style="color:#9cdcfe;">'
-                               f'{os.path.basename(png_path)}</b>')
+                               f'{os.path.basename(pdf_path)}</b>')
             name_lbl.setStyleSheet('background:#2b2b2b; padding:4px 8px;')
             self._results_layout.addWidget(name_lbl)
 
-            # Image
-            pixmap = QPixmap(png_path)
-            if not pixmap.isNull():
-                scaled = pixmap.scaledToWidth(img_width, Qt.SmoothTransformation)
-                img_lbl = QLabel()
-                img_lbl.setPixmap(scaled)
-                img_lbl.setAlignment(Qt.AlignHCenter)
-                img_lbl.setStyleSheet('background:#2b2b2b; padding:4px;')
-                self._results_layout.addWidget(img_lbl)
+            # Render first page of PDF to QImage via QPdfDocument
+            doc = QPdfDocument(self)
+            doc.load(pdf_path)
+            if doc.pageCount() > 0:
+                page_size = doc.pagePointSize(0)   # QSizeF in points
+                if page_size.width() > 0:
+                    scale = img_width / page_size.width()
+                    render_h = int(page_size.height() * scale)
+                else:
+                    render_h = img_width
+                image = doc.render(0, QSize(img_width, render_h))
+                pixmap = QPixmap.fromImage(image)
+                if not pixmap.isNull():
+                    img_lbl = QLabel()
+                    img_lbl.setPixmap(pixmap)
+                    img_lbl.setAlignment(Qt.AlignHCenter)
+                    img_lbl.setStyleSheet('background:#2b2b2b; padding:4px;')
+                    self._results_layout.addWidget(img_lbl)
+            doc.close()
 
         self._results_layout.addStretch()
         self._tabs.setCurrentIndex(1)
