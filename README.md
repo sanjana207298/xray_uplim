@@ -1,8 +1,9 @@
 # xray_uplim
 
-Unified X-ray non-detection upper limit calculator for NuSTAR, XMM-Newton, Swift XRT, and Chandra ACIS.
+**Unified X-ray non-detection upper limit calculator** for NuSTAR, XMM-Newton, Swift XRT, and Chandra ACIS.
 
 Given a source position and an X-ray observation in which the source was not detected, `xray_uplim` computes a Bayesian upper limit on the source count rate and flux at one or more confidence levels. It handles multi-observation co-adding, aperture photometry, encircled energy fraction (EEF) correction, and diagnostic plot generation automatically.
+
 ---
 
 ## Platform support
