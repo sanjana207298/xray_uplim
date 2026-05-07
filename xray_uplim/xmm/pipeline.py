@@ -731,7 +731,8 @@ def process_observations(cfg: XMMConfig):
         N_total     = sum(per_obs_raw[oid][instrument]['N_src']     for oid in obs_with_data)
         B_total     = sum(per_obs_raw[oid][instrument]['B_scaled']  for oid in obs_with_data)
         N_bkg_total = sum(per_obs_raw[oid][instrument]['N_bkg_raw'] for oid in obs_with_data)
-        area_ratio  = per_obs_raw[obs_with_data[0]][instrument]['area_ratio']
+        area_ratio  = (B_total / N_bkg_total if N_bkg_total > 0
+                       else per_obs_raw[obs_with_data[0]][instrument]['area_ratio'])
         t_total     = sum(per_obs_raw[oid][instrument]['t_eff']     for oid in obs_with_data)
         e_lo_i      = per_obs_raw[obs_with_data[0]][instrument]['e_lo']
         e_hi_i      = per_obs_raw[obs_with_data[0]][instrument]['e_hi']

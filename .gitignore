@@ -28,6 +28,7 @@ xray_uplim/data/xmm/
 
 # One-off scripts (not part of the package)
 make_eef_validation_plot.py
+nustar_eef.ipynb
 
 # Outputs
 results/

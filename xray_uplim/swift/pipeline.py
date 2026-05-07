@@ -578,7 +578,9 @@ def process_observation(cfg: SwiftConfig):
     N_src_total     = sum(r['N_src']     for r in per_obs)
     N_bkg_raw_total = sum(r['N_bkg_raw'] for r in per_obs)
     T_eff_total     = sum(r['t_eff']     for r in per_obs)
-    area_ratio      = per_obs[0]['area_ratio']   # exposure-weighted; use first obs as representative
+    area_ratio      = (sum(r['B_scaled'] for r in per_obs) / N_bkg_raw_total
+                       if N_bkg_raw_total > 0
+                       else per_obs[0]['area_ratio'])
     B_scaled_total  = N_bkg_raw_total * area_ratio
 
     # Exposure-weighted EEF average

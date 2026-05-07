@@ -608,7 +608,9 @@ def process_observation(cfg: ChandraConfig):
     T_total         = sum(r['T_s']       for r in per_obs)
     E_s_total       = sum(r['E_s']       for r in per_obs)
     E_b_total       = sum(r['E_b']       for r in per_obs)
-    area_ratio      = per_obs[0]['area_ratio']
+    area_ratio      = (sum(r['B_scaled'] for r in per_obs) / N_bkg_raw_total
+                       if N_bkg_raw_total > 0
+                       else per_obs[0]['area_ratio'])
     A_s             = per_obs[0]['A_s']
     A_b             = per_obs[0]['A_b']
     B_scaled_total  = N_bkg_raw_total * area_ratio

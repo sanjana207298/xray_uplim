@@ -808,7 +808,8 @@ def process_observations(cfg):
         N_total     = sum(per_obs_raw[oid][module]['N_src']     for oid in obsids)
         B_total     = sum(per_obs_raw[oid][module]['B_scaled']  for oid in obsids)
         N_bkg_total = sum(per_obs_raw[oid][module]['N_bkg_raw'] for oid in obsids)
-        area_ratio  = per_obs_raw[obsids[0]][module]['area_ratio']
+        area_ratio  = (B_total / N_bkg_total if N_bkg_total > 0
+                       else per_obs_raw[obsids[0]][module]['area_ratio'])
         t_total     = sum(per_obs_raw[oid][module]['t_eff']     for oid in obsids)
 
         # EEF: exposure-weighted average across obsids
