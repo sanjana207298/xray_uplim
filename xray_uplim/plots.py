@@ -15,7 +15,7 @@ exposure_histogram()
 
 region_image()
     Sky image of the event field with source aperture and background annulus
-    overlaid.  Saved as both PNG and PDF — suitable for inclusion in papers.
+    overlaid. 
 """
 
 import os
@@ -279,8 +279,8 @@ def region_image(evt_x, evt_y, cx_evt, cy_evt, pscale_evt,
         # Let matplotlib choose tick positions in arcsec, then relabel as RA/Dec
         ax.set_xlabel('RA (J2000)')
         ax.set_ylabel('Dec (J2000)')
-        fig.tight_layout()          # fix layout before reading tick positions
-        fig.canvas.draw()           # force tick computation
+        fig.tight_layout()          
+        fig.canvas.draw()           # update tick positions after drawing
 
         x_ticks = ax.get_xticks()
         y_ticks = ax.get_yticks()

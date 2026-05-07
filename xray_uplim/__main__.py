@@ -20,7 +20,7 @@ def _fix_qt_plugins():
     locate its own platform plugins (cocoa / xcb) because the search path
     is not set automatically.  We resolve this by pointing
     QT_QPA_PLATFORM_PLUGIN_PATH at the plugins/ directory that ships
-    inside the PySide6 wheel — before any Qt code is imported.
+    inside the PySide6 wheel before any Qt code is imported.
     """
     if 'QT_QPA_PLATFORM_PLUGIN_PATH' in os.environ:
         return   # already set by the user, leave it alone
@@ -32,7 +32,7 @@ def _fix_qt_plugins():
         if os.path.isdir(plugins_dir):
             os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = plugins_dir
     except Exception:
-        pass   # nothing we can do; let Qt report the error normally
+        pass   # nothing can be done; let Qt report the error normally
 
 
 def main():

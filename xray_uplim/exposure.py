@@ -10,8 +10,8 @@ convert count upper limits into count-rate upper limits.
 
 Why not use the header LIVETIME?
     The LIVETIME keyword gives the total good-time live time for the whole
-    detector, ignoring vignetting.  At the source position — especially if
-    it is off-axis — the effective exposure can be significantly lower.
+    detector, ignoring vignetting.  At the source position, especially if
+    it is off-axis, the effective exposure can be significantly lower.
     The exposure map gives the correct per-pixel value.
 
 Statistic choices

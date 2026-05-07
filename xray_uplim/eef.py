@@ -15,7 +15,7 @@ where the PSF image has been normalised to unit sum before integration.
 The full 2D PSF image is used rather than an azimuthally averaged profile,
 preserving the genuine asymmetry of the off-axis PSF.
 
-The NuSTAR CALDB tabulates the PSF at off-axis angles 0'–8.5' in steps of
+The NuSTAR CALDB tabulates the PSF at off-axis angles 0'-8.5' in steps of
 0.5' (18 angles total; Harrison et al. 2013).  At a non-integer angle theta,
 pixel-by-pixel bilinear interpolation is performed between the two bracketing
 images:

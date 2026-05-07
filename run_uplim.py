@@ -53,7 +53,6 @@ NUSTAR = dict(
     exp_stat          = 'median',   # 'median' | 'mean' | 'psf_weighted'
 
     psf_gamma         = 2.0,        # photon index for PSF spectral weighting
-                                    # 2.0 = soft source prior; 1.7 = harder; 0.0 = flat
 
     confidence_levels = [0.68, 0.9545, 0.9973],   # ~1σ, ~2σ and ~3σ
 
@@ -128,7 +127,7 @@ SWIFT = dict(
                         #                               "03000397002",
                         #                               "03000397004"]
                         # Co-adding sums counts + exposures, then gives one
-                        # combined upper limit — ideal for short Swift exposures.
+                        # combined upper limit is ideal for short Swift exposures.
 
     ra                = "16:33:29.416",   # "HH:MM:SS.ss" or decimal degrees
     dec               = "-06:22:49.51",   # "±DD:MM:SS.ss" or decimal degrees

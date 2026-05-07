@@ -471,7 +471,7 @@ class NuSTARForm(_BaseForm):
         rh.addWidget(self._mod_a)
         rh.addWidget(self._mod_b)
         rh.addStretch()
-        lay2.addRow(row)          # no label — group title already says "Focal-plane modules"
+        lay2.addRow(row)          
         self._main_layout.addWidget(box2)
 
         self._add_background_mode()

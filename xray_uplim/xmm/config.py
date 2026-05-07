@@ -12,11 +12,11 @@ Energy bands
 XMM EPIC PI channels: 1 PI = 1 eV, so E_keV = PI / 1000.
 
 Named bands:
-    'full'      0.5 – 10.0 keV   (PI  500 – 10000)
+    'full'      0.2 – 12.0 keV   (PI  200 – 12000)
     'soft'      0.5 –  2.0 keV   (PI  500 –  2000)
     'hard'      2.0 – 10.0 keV   (PI 2000 – 10000)
     'medium'    1.0 –  2.0 keV   (PI 1000 –  2000)
-    'ultrasoft' 0.2 –  0.5 keV   (PI  200 –   500)  [use with caution below 0.5 keV]
+    'ultrasoft' 0.2 –  0.5 keV   (PI  200 –   500)
 
 Custom band: tuple e.g. (0.5, 7.0) or string '(0.5, 7.0)'.
 
